@@ -2,9 +2,13 @@
 
 **NoobScribe** is a FastAPI service that exposes an **OpenAI Whisper–compatible** HTTP API for speech-to-text, powered by **[NVIDIA Canary 1B v2](https://huggingface.co/nvidia/canary-1b-v2)** via **[NVIDIA NeMo](https://github.com/NVIDIA/NeMo)** and optional **[Pyannote.audio](https://github.com/pyannote/pyannote-audio)** speaker diarization ([default pipeline on Hugging Face](https://huggingface.co/pyannote/speaker-diarization-3.1)).
 
+Use case: run a zero-install transcription workflow from the browser - upload meeting audio or record live from mic/tab audio, then review and manage speaker-labeled transcripts in one place.
+
 > **Attribution:** Based on **[parakeet-diarized](https://github.com/jfgonsalves/parakeet-diarized)** by [jfgonsalves](https://github.com/jfgonsalves). See **[ATTRIBUTION.md](ATTRIBUTION.md)** for file-level provenance and licensing notes.
 
 **Author:** [meganoob1337](https://github.com/meganoob1337)
+
+**Development note:** This project was developed using Cursor as an assistive tool, with direction from a human and additional manual edits by the author.
 
 ## Features
 
@@ -16,6 +20,28 @@
 - Offline options: `MODEL_PATH` ([NeMo](https://github.com/NVIDIA/NeMo) `.nemo`), `DIARIZATION_MODEL_PATH` (local [**Pyannote**](https://github.com/pyannote/pyannote-audio) pipeline)
 
 Full endpoint reference: **[API_DOCUMENTATION.md](API_DOCUMENTATION.md)**
+
+## Core functionality
+
+NoobScribe is built around a Whisper-compatible transcription API with persistent storage and speaker-aware post-processing:
+
+- Accept audio uploads and transcribe them through NVIDIA Canary (NeMo) using a familiar Whisper-style endpoint.
+- Return transcript output in multiple formats (`json`, `text`, `srt`, `vtt`, `verbose_json`) with segment timestamps.
+- Optionally run speaker diarization and attach speaker embeddings to transcript results.
+- Match detected speakers against a stored speaker memory (Chroma) to reuse display names across recordings.
+- Store recordings and transcription metadata in SQLite, with audio files persisted on disk.
+- Support language auto-detection (when `language` is omitted) and offline model paths for ASR/diarization.
+
+## Implemented Web UI features
+
+The built-in UI at `/ui` is a single-page app for managing recordings, transcripts, and speaker identities:
+
+- **Recordings library:** paginated recordings list, responsive table/cards, and quick navigation to details.
+- **Upload flow:** upload audio file with optional recording name and immediate redirect to the created recording.
+- **Browser recording:** capture microphone and/or tab/window audio, live level meters, preview, upload, and discard.
+- **Recording detail:** rename recordings, play original audio, run transcription jobs with diarization/word timestamp options, and review prior transcription runs.
+- **Transcript viewer:** formatted transcript display, per-segment snippet playback, `.txt` download, and save detected speaker embeddings.
+- **Speaker management:** list/delete speakers, add embeddings from snippet extraction or manual vector input, inspect embedding snippets, and delete individual embeddings.
 
 ## Quick start (Docker)
 
