@@ -8,6 +8,8 @@ NoobScribe is developed by **meganoob1337**, building on the open-source project
 
 This project is derived from **[parakeet-diarized](https://github.com/jfgonsalves/parakeet-diarized)** by **jfgonsalves** (Filipe Gonsalves).
 
+Thank you to Filipe Gonsalves and contributors to the upstream project for providing a strong open-source foundation for this work.
+
 The last upstream commit used as a reference for file provenance is **`6abadfdca15ca439ad7877db073caa7397499782`** (“readme update”).
 
 Upstream license (project): **MIT** (see upstream repository).
