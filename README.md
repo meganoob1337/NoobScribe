@@ -105,4 +105,8 @@ Set `HUGGINGFACE_ACCESS_TOKEN` if you use Hugging Face for diarization (or set `
 
 ## License
 
-Project code: follow **[ATTRIBUTION.md](ATTRIBUTION.md)** and upstream **MIT** terms where they apply. **ASR and diarization models** have their own terms — see **[Canary](https://huggingface.co/nvidia/canary-1b-v2)** and **[Pyannote diarization](https://huggingface.co/pyannote/speaker-diarization-3.1)** model cards (Canary is commonly **CC-BY-4.0**; confirm on each card you use).
+NoobScribe project code is licensed under the **MIT License**. See **[LICENSE](LICENSE)**.
+
+For provenance details and upstream attribution, see **[ATTRIBUTION.md](ATTRIBUTION.md)**.
+
+**ASR and diarization models** have their own terms — see **[Canary](https://huggingface.co/nvidia/canary-1b-v2)** and **[Pyannote diarization](https://huggingface.co/pyannote/speaker-diarization-3.1)** model cards (Canary is commonly **CC-BY-4.0**; confirm on each card you use).
