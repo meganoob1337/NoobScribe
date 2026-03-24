@@ -1,6 +1,8 @@
 # Default Docker Compose: local GPU, port 8000. See DOCKER_README.md.
+# Pre-built image from GHCR (override with NOOBSCRIBE_IMAGE); keep `build: .` for local builds.
 services:
   noobscribe-api:
+    image: ${NOOBSCRIBE_IMAGE:-ghcr.io/meganoob1337/noobscribe:latest}
     build: .
     container_name: noobscribe-api
     ports:

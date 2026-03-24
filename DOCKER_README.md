@@ -8,9 +8,32 @@ GPU-backed Docker setup for **NoobScribe** (NeMo ASR + optional pyannote diariza
 2. [NVIDIA Container Toolkit](https://github.com/NVIDIA/nvidia-docker) for GPU
 3. Hugging Face token for **remote** diarization, **or** `DIARIZATION_MODEL_PATH` for offline pyannote
 
+## Pre-built image (GitHub Container Registry)
+
+The workflow **[.github/workflows/docker-publish.yml](.github/workflows/docker-publish.yml)** builds and pushes the API image to **GHCR** on pushes to the default branch (`main`), on version tags `v*`, and on manual **workflow_dispatch**. Pull requests run a build only (no push).
+
+- **Package:** `ghcr.io/meganoob1337/noobscribe` (GitHub lowercases the repository name; the GitHub repo is **NoobScribe**).
+- **Tags:** `latest` tracks the default branch; git tags like `v1.2.3` produce semver tags; each push also gets a short **SHA** tag.
+
+Compose sets **`image`** to that registry image and keeps **`build: .`** so you can still build locally. Override the image with **`NOOBSCRIBE_IMAGE`** in `.env` (see **[env.example](env.example)**) — useful for forks (`ghcr.io/<your-user>/<your-repo>:<tag>`) or pinning a specific tag.
+
+If the package is **private**, authenticate before pull:
+
+```bash
+echo "$GITHUB_TOKEN" | docker login ghcr.io -u USERNAME --password-stdin
+```
+
+Use a [personal access token](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry#authenticating-to-the-container-registry) with `read:packages`. For a public package, no login is required.
+
 ## Build and run (Compose)
 
-From the repository root:
+From the repository root, **pull the pre-built image** (default) or **build locally**:
+
+```bash
+docker compose up -d
+```
+
+Local build from the Dockerfile:
 
 ```bash
 docker compose build
@@ -111,10 +134,11 @@ Use **[docker-compose.traefik.yaml](docker-compose.traefik.yaml)** when Traefik 
 
 ### Run
 
-From the repo root (Compose v2):
+From the repo root (Compose v2). Omit **`--build`** if you only want the default **GHCR** image; add **`--build`** to rebuild from the local Dockerfile.
 
 ```bash
-docker compose -f docker-compose.traefik.yaml --env-file .env up -d --build
+docker compose -f docker-compose.traefik.yaml --env-file .env up -d
+# or: ... up -d --build
 ```
 
 Stop:

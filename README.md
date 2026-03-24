@@ -47,10 +47,20 @@ The built-in UI at `/ui` is a single-page app for managing recordings, transcrip
 
 Prerequisites: [Docker](https://docs.docker.com/get-docker/), [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html) for GPU.
 
+**Pre-built image:** CI publishes **`ghcr.io/meganoob1337/noobscribe`** (tags such as `latest` on the default branch and semver on `v*` git tags). Compose uses that image by default so you can start without a local build:
+
+```bash
+docker compose up -d
+```
+
+To **build from source** instead (or after changing the app or Dockerfile):
+
 ```bash
 docker compose build
 docker compose up -d
 ```
+
+Set **`NOOBSCRIBE_IMAGE`** in `.env` if you use a fork or a pinned digest/tag (see **[DOCKER_README.md](DOCKER_README.md)**).
 
 - API: `http://localhost:8000`
 - OpenAPI: `http://localhost:8000/docs`

@@ -11,8 +11,8 @@
 #   2. Edit .env: set NOOBSCRIBE_HOST, TRAEFIK_NETWORK, GPU_DEVICE_ID, secrets
 #   3. Ensure the external Traefik network exists, e.g.:
 #        docker network create traefik-global-proxy
-#   4. Build and run:
-#        docker compose -f docker-compose.traefik.yaml --env-file .env up -d --build
+#   4. Run (add --build to compile the Dockerfile instead of using the default GHCR image):
+#        docker compose -f docker-compose.traefik.yaml --env-file .env up -d
 #
 # Variables (also documented in env.example):
 #   NOOBSCRIBE_HOST      → Traefik Host(`...`) rule (public DNS name, no scheme)
@@ -29,11 +29,12 @@ version: "3.8"
 
 services:
   noobscribe-api:
+    image: ${NOOBSCRIBE_IMAGE:-ghcr.io/meganoob1337/noobscribe:latest}
     build: .
     container_name: noobscribe-api
-    # ports:
+    ports:
       # Optional host publish for direct access (Traefik uses the Docker network to reach :8000).
-      # - "${NOOBSCRIBE_PUBLISH_PORT:-8000:8000}"
+      - "${NOOBSCRIBE_PUBLISH_PORT:-8000:8000}"
     environment:
       - HOST=0.0.0.0
       - PORT=8000
