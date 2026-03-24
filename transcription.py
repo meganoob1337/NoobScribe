@@ -1,3 +1,6 @@
+# Originally from https://github.com/jfgonsalves/parakeet-diarized (commit 6abadfd)
+# Copyright (c) jfgonsalves - MIT License
+# Modified by meganoob1337 for the NoobScribe project
 import os
 import logging
 import tempfile
@@ -10,22 +13,28 @@ from models import WhisperSegment, TranscriptionResponse
 
 logger = logging.getLogger(__name__)
 
-def load_model(model_id: str = "nvidia/parakeet-tdt-0.6b-v2"):
+def load_model(model_id: str = "nvidia/canary-1b-v2", model_path: Optional[str] = None):
     """
-    Load the ASR model (Parakeet-TDT)
+    Load the ASR model (NVIDIA NeMo, default: Canary 1B v2)
 
     Args:
-        model_id: The HuggingFace model ID to load
+        model_id: The HuggingFace / NeMo model ID to load when ``model_path`` is not set
+        model_path: Optional path to a local ``.nemo`` checkpoint (fully offline)
 
     Returns:
         The loaded model
     """
     try:
+        # from nemo.collections.asr.models import EncDecMultiTaskModel
         from nemo.collections.asr.models import EncDecCTCModelBPE
+        from nemo.collections.asr.models import ASRModel
 
-        logger.info(f"Loading model {model_id}")
-        # For Parakeet-TDT, we use the NeMo toolkit
-        model = EncDecCTCModelBPE.from_pretrained(model_id)
+        if model_path:
+            logger.info("Loading ASR model from local path: %s", model_path)
+            model = ASRModel.restore_from(restore_path=model_path)
+        else:
+            logger.info("Loading model %s", model_id)
+            model = ASRModel.from_pretrained(model_name=model_id)
 
         # Move model to GPU if available
         if torch.cuda.is_available():
@@ -113,7 +122,7 @@ def format_vtt(segments: List[WhisperSegment]) -> str:
 def transcribe_audio_chunk(model, audio_path: str, language: Optional[str] = None,
                           word_timestamps: bool = False) -> Tuple[str, List[WhisperSegment]]:
     """
-    Transcribe a single audio chunk using the Parakeet-TDT model
+    Transcribe a single audio chunk using the loaded NeMo ASR model
 
     Args:
         model: The loaded ASR model
@@ -130,8 +139,13 @@ def transcribe_audio_chunk(model, audio_path: str, language: Optional[str] = Non
             # Simply pass the audio path(s) as a list to the transcribe method
             transcription = model.transcribe(
                 [audio_path],
+                source_lang=language,
+                target_lang=language,
+                # taskname="asr",
+                # batch_size=1,
                 timestamps=True  # Always request timestamps for segmentation
             )
+        logger.info(f"Transcription of chunk  {transcription}")
 
         # Extract the text from the result
         if not transcription or len(transcription) == 0:

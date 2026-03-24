@@ -1,3 +1,6 @@
+# From https://github.com/jfgonsalves/parakeet-diarized (commit 6abadfd)
+# Copyright (c) jfgonsalves - MIT License
+# String updates for NoobScribe by meganoob1337
 import os
 import logging
 import uvicorn
@@ -35,7 +38,7 @@ from models import WhisperSegment, TranscriptionResponse
 # Run the server if executed directly
 if __name__ == "__main__":
     # Log startup information
-    logger.info(f"Starting Parakeet Whisper-Compatible API on {config.host}:{config.port}")
+    logger.info(f"Starting NoobScribe API on {config.host}:{config.port}")
     if torch.cuda.is_available():
         logger.info(f"CUDA available: {torch.cuda.get_device_name(0)}")
     else:

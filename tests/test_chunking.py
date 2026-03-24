@@ -1,3 +1,5 @@
+# From https://github.com/jfgonsalves/parakeet-diarized (commit 6abadfd)
+# Copyright (c) jfgonsalves - MIT License
 import os
 import tempfile
 import unittest

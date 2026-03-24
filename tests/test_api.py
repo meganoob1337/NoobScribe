@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# From https://github.com/jfgonsalves/parakeet-diarized (commit 6abadfd)
+# Copyright (c) jfgonsalves - MIT License
+# String updates for NoobScribe by meganoob1337
 import os
 import sys
 import argparse
@@ -9,7 +12,7 @@ from pathlib import Path
 import time
 
 def main():
-    parser = argparse.ArgumentParser(description="Test the Parakeet Whisper-Compatible API")
+    parser = argparse.ArgumentParser(description="Test the NoobScribe API (Whisper-compatible)")
     parser.add_argument("--file", required=True, help="Path to audio file to transcribe")
     parser.add_argument("--url", default="http://localhost:8000", help="API URL")
     parser.add_argument("--format", default="verbose_json", choices=["json", "text", "srt", "vtt", "verbose_json"], 

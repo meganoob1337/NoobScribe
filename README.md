@@ -1,277 +1,82 @@
-# Parakeet Whisper-Compatible API
+# NoobScribe
 
-A simple FastAPI server that provides an OpenAI Whisper API-compatible endpoint backed by [NVIDIA's Parakeet-TDT model](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v2) for speech recognition + [Pyannote](https://github.com/pyannote/pyannote-audio) for speaker diarization.
+**NoobScribe** is a FastAPI service that exposes an **OpenAI Whisper–compatible** HTTP API for speech-to-text, powered by **[NVIDIA Canary 1B v2](https://huggingface.co/nvidia/canary-1b-v2)** via **[NVIDIA NeMo](https://github.com/NVIDIA/NeMo)** and optional **[Pyannote.audio](https://github.com/pyannote/pyannote-audio)** speaker diarization ([default pipeline on Hugging Face](https://huggingface.co/pyannote/speaker-diarization-3.1)).
+
+> **Attribution:** Based on **[parakeet-diarized](https://github.com/jfgonsalves/parakeet-diarized)** by [jfgonsalves](https://github.com/jfgonsalves). See **[ATTRIBUTION.md](ATTRIBUTION.md)** for file-level provenance and licensing notes.
+
+**Author:** [meganoob1337](https://github.com/meganoob1337)
 
 ## Features
 
-- Complete drop-in replacement for OpenAI's Whisper API
-- Uses [NVIDIA's Parakeet-TDT 0.6B V2 model](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v2) for high-quality transcription
-- Supports all Whisper API response formats (json, text, srt, vtt, verbose_json)
-- Supports word-level and segment-level timestamps
-- Optional speaker diarization using [Pyannote.audio](https://github.com/pyannote/pyannote-audio)
-- FastAPI-based server with automatic OpenAPI documentation
+- Whisper-compatible `POST /v1/audio/transcriptions` (json, text, srt, vtt, verbose_json)
+- Segment timestamps; optional word timestamps and diarization
+- **Speaker embedding memory** ([**Chroma**](https://www.trychroma.com/)) with display names and re-matching across stored transcripts
+- **Recording library** ([**SQLAlchemy**](https://www.sqlalchemy.org/) + SQLite + on-disk audio) and **Web UI** at `/ui` (transcript view: per-segment play/pause via `GET /v1/audio/snippet`, streams only on play)
+- Optional **spoken language ID** ([**SpeechBrain**](https://speechbrain.github.io/) · [VoxLingua107 ECAPA](https://huggingface.co/speechbrain/lang-id-voxlingua107-ecapa)) when `language` is omitted
+- Offline options: `MODEL_PATH` ([NeMo](https://github.com/NVIDIA/NeMo) `.nemo`), `DIARIZATION_MODEL_PATH` (local [**Pyannote**](https://github.com/pyannote/pyannote-audio) pipeline)
 
-## Requirements
+Full endpoint reference: **[API_DOCUMENTATION.md](API_DOCUMENTATION.md)**
 
-- NVIDIA GPU with CUDA support (recommended)
-- Python 3.8 or higher
-- HuggingFace account and access token (required for speaker diarization)
+## Quick start (Docker)
 
-## Installation
-
-1. Clone this repository:
-   ```bash
-   git clone https://github.com/jfgonsalves/parakeet-diarized
-   cd parakeet-diarized
-   ```
-
-2. Create and activate a virtual environment:
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   ```
-
-3. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-4. Set up speaker diarization (optional):
-   - Create a free account at [HuggingFace](https://huggingface.co/)
-   - Generate an access token at [HuggingFace Settings](https://huggingface.co/settings/tokens)
-   - Accept the user agreement for the [Pyannote speaker diarization model](https://huggingface.co/pyannote/speaker-diarization-3.1)
-
-5. Run the server:
-
-   **With speaker diarization:**
-   ```bash
-   ./run.sh --hf-token "your_token_here"
-   ```
-
-   **Without speaker diarization:**
-   ```bash
-   ./run.sh
-   ```
-
-   **Other options:**
-   ```bash
-   ./run.sh --help  # See all available options
-   ./run.sh --port 8080 --debug --hf-token "your_token_here"
-   ```
-
-## Usage
-
-### API Endpoints
-
-The API mimics the OpenAI Whisper API interface:
-
-#### Transcribe Audio
-
-```
-POST /v1/audio/transcriptions
-```
-
-Parameters:
-- `file`: The audio file to transcribe (multipart/form-data)
-- `model`: Model to use (defaults to "whisper-1", but will use Parakeet regardless)
-- `language`: Language of the audio (optional)
-- `response_format`: Format of the response (defaults to "json", options: json, text, srt, vtt, verbose_json)
-- `timestamps`: Whether to include timestamps (defaults to false)
-- `timestamp_granularities`: Timestamp detail level (accepts "segment")
-- `temperature`: Temperature for sampling (defaults to 0.0)
-- `vad_filter`: Voice activity detection filter (defaults to false)
-- `prompt`: Optional prompt to guide the transcription (ignored but accepted for compatibility)
-- `diarize`: Enable speaker diarization (defaults to true, requires HuggingFace token)
-- `include_diarization_in_text`: Include speaker labels in transcript text (defaults to true)
-
-Example with curl:
-```bash
-curl -X POST http://localhost:8000/v1/audio/transcriptions \
-  -H "Content-Type: multipart/form-data" \
-  -F file=@/path/to/your/audio.wav \
-  -F model=whisper-1 \
-  -F timestamps=true \
-  -F diarize=true
-```
-
-#### Health Check
-
-```
-GET /health
-```
-
-Returns the health status of the API and the loaded model.
-
-## Compatibility with OpenAI Whisper API
-
-This API is designed to be a drop-in replacement for the OpenAI Whisper API:
-
-1. Supports all Whisper API response formats (json, text, srt, vtt, verbose_json)
-2. Accepts all major Whisper API parameters for compatibility
-3. Returns responses in the same format as the OpenAI Whisper API
-4. Provides a `/v1/models` endpoint for application compatibility
-
-Minor differences:
-1. The `model` parameter is accepted but ignored - always uses Parakeet-TDT
-2. Some advanced Whisper-specific parameters might have no effect
-3. Performance characteristics may differ from OpenAI's implementation
-
-## API Response Formats
-
-The API supports multiple response formats:
-
-### JSON (default)
-```json
-{
-  "text": "Full transcription text goes here"
-}
-```
-
-### Verbose JSON
-```json
-{
-  "text": "Full transcription text goes here",
-  "task": "transcribe",
-  "language": "en",
-  "duration": 10.5,
-  "model": "parakeet-tdt-0.6b-v2",
-  "segments": [
-    {
-      "id": 0,
-      "seek": 0,
-      "start": 0.0,
-      "end": 2.5,
-      "text": "Segment text",
-      "tokens": [50364, 2425, 286, 257],
-      "temperature": 0.0,
-      "avg_logprob": -0.5,
-      "compression_ratio": 1.0,
-      "no_speech_prob": 0.1
-    },
-    {
-      "id": 1,
-      "start": 2.5,
-      "end": 5.0,
-      "text": "Another segment",
-      "tokens": [50364, 5816, 2121],
-      "temperature": 0.0,
-      "avg_logprob": -0.6,
-      "compression_ratio": 1.0,
-      "no_speech_prob": 0.05
-    }
-  ]
-}
-```
-
-### Plain Text
-```
-Full transcription text goes here
-```
-
-### SRT
-```
-1
-00:00:00,000 --> 00:00:02,500
-Segment text
-
-2
-00:00:02,500 --> 00:00:05,000
-Another segment
-```
-
-### VTT
-```
-WEBVTT
-
-00:00:00.000 --> 00:00:02.500
-Segment text
-
-00:00:02.500 --> 00:00:05.000
-Another segment
-```
-
-The `segments` field is included when the `timestamps` parameter is set to `true` or when using `verbose_json` format.
-
-## Speaker Diarization
-
-The API includes speaker diarization capabilities using [Pyannote.audio](https://github.com/pyannote/pyannote-audio):
-
-### Setup Requirements
-
-For speaker diarization to work, you need:
-
-1. **HuggingFace Account**: Create a free account at [huggingface.co](https://huggingface.co/)
-2. **Access Token**: Generate a token at [HuggingFace Settings](https://huggingface.co/settings/tokens)
-3. **Model Agreement**: Accept the user agreement for [pyannote/speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1)
-4. **Environment Variable**: Set `HUGGINGFACE_ACCESS_TOKEN` with your token
-
-### Features
-
-- Automatic speaker detection and labeling
-- Integration with transcription segments
-- Optional speaker labels in transcript text
-- Support for multiple speakers per audio file
-
-### Usage
-
-Enable diarization by setting `diarize=true` in your API request:
+Prerequisites: [Docker](https://docs.docker.com/get-docker/), [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html) for GPU.
 
 ```bash
-curl -X POST http://localhost:8000/v1/audio/transcriptions \
-  -H "Content-Type: multipart/form-data" \
-  -F file=@/path/to/your/audio.wav \
-  -F diarize=true \
-  -F include_diarization_in_text=true
+docker compose build
+docker compose up -d
 ```
 
-When `include_diarization_in_text=true`, the transcript will include speaker labels:
-```
-Speaker 1: Hello, how are you today?
-Speaker 2: I'm doing well, thank you for asking.
-```
+- API: `http://localhost:8000`
+- OpenAPI: `http://localhost:8000/docs`
+- Web UI: `http://localhost:8000/ui` (or open `http://localhost:8000/` — redirects to `/ui`)
 
-### Configuration
+Data persists under `./data` (mounted in Compose). Hugging Face cache can live under `./huggingface`.
 
-Use the `run.sh` script to configure and start the server:
+Copy **[env.example](env.example)** to `.env` and adjust values (Compose loads `.env` automatically; never commit secrets).
+
+See **[DOCKER_README.md](DOCKER_README.md)** for environment variables, **Traefik + TLS**, and manual `docker run` examples.
+
+**Traefik:** Use **[docker-compose.traefik.yaml](docker-compose.traefik.yaml)** with a pre-existing Traefik stack and external Docker network. Set `NOOBSCRIBE_HOST` and `TRAEFIK_NETWORK` in `.env` (see `env.example`). Full steps in **DOCKER_README.md**.
+
+## Local development (without Docker)
 
 ```bash
-./run.sh --help
-# Options:
-#   --debug             Enable debug mode
-#   --port PORT         Set server port (default: 8000)
-#   --host HOST         Set server host (default: 0.0.0.0)
-#   --skip-deps-check   Skip dependency checking
-#   --hf-token TOKEN    Set HuggingFace access token for speaker diarization
-#   --help              Show help message
+python -m venv venv
+source venv/bin/activate   # Windows: venv\Scripts\activate
+pip install -r requirements.txt
 ```
 
-**Environment Variables** (for settings not available as command line arguments):
-- `ENABLE_DIARIZATION`: Enable/disable diarization globally (default: true)
-- `INCLUDE_DIARIZATION_IN_TEXT`: Include speaker labels in text by default (default: true)
-- `MODEL_ID`: Parakeet model to use (default: nvidia/parakeet-tdt-0.6b-v2)
-- `TEMPERATURE`: Sampling temperature (default: 0.0)
-- `CHUNK_DURATION`: Audio chunk duration in seconds (default: 500)
-- `TEMP_DIR`: Temporary directory for audio processing (default: /tmp/parakeet)
+Set `HUGGINGFACE_ACCESS_TOKEN` if you use Hugging Face for diarization (or set `DIARIZATION_MODEL_PATH` for offline pyannote).
 
-## Performance
+```bash
+./run.sh --hf-token "your_token"    # optional
+# or
+./run.sh --port 8000
+```
 
-The [NVIDIA Parakeet-TDT model](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v2) offers:
-- Fast transcription (top model on the HF Open ASR leaderboard)
-- Support for punctuation and capitalization
-- High accuracy with word error rates as low as 1.69% on LibriSpeech test-clean
+## Configuration (high level)
 
-[Pyannote.audio](https://github.com/pyannote/pyannote-audio) speaker diarization adds:
-- Automatic speaker identification using state-of-the-art models
-- Real-time speaker change detection
-- Support for unlimited number of speakers
+| Variable | Default | Notes |
+|----------|---------|--------|
+| `MODEL_ID` | `nvidia/canary-1b-v2` | [Canary](https://huggingface.co/nvidia/canary-1b-v2) / [NeMo](https://github.com/NVIDIA/NeMo) from Hugging Face |
+| `MODEL_PATH` | _(unset)_ | Local [NeMo](https://github.com/NVIDIA/NeMo) `.nemo` checkpoint (offline ASR) |
+| `DIARIZATION_MODEL_PATH` | _(unset)_ | Local [Pyannote](https://github.com/pyannote/pyannote-audio) pipeline dir |
+| `HUGGINGFACE_ACCESS_TOKEN` | _(unset)_ | For [pyannote/speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1) when not offline |
+| `DATABASE_URL` | `sqlite+aiosqlite:///./data/noobscribe.db` | Recordings metadata |
+| `CHROMADB_PATH` | `./data/speakers` | [Chroma](https://www.trychroma.com/) speaker embedding store |
+| `RECORDINGS_PATH` | `./data/recordings` | Uploaded audio |
+| `TEMP_DIR` | `/tmp/noobscribe` | Temp transcoding |
+| `CHUNK_DURATION` | `20` | Chunk length (seconds) for long files |
+| `SPEAKER_SIMILARITY_THRESHOLD` | `0.7` | Cosine similarity for speaker match |
 
-## Acknowledgments
+## Testing
 
-This project builds upon excellent work by:
-
-- **NVIDIA NeMo Team**: For the outstanding [Parakeet-TDT model](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v2) that provides state-of-the-art speech recognition
-- **Pyannote Team**: For the powerful [Pyannote.audio](https://github.com/pyannote/pyannote-audio) speaker diarization toolkit
+```bash
+./venv/bin/python -m pip install -r requirements.txt pytest
+./venv/bin/python -m pytest tests/ -q
+./venv/bin/python tests/test_api.py --file /path/to/audio.wav --url http://localhost:8000
+```
 
 ## License
 
-This project is released under MIT License. However, the Parakeet-TDT model is governed by the CC-BY-4.0 license.
+Project code: follow **[ATTRIBUTION.md](ATTRIBUTION.md)** and upstream **MIT** terms where they apply. **ASR and diarization models** have their own terms — see **[Canary](https://huggingface.co/nvidia/canary-1b-v2)** and **[Pyannote diarization](https://huggingface.co/pyannote/speaker-diarization-3.1)** model cards (Canary is commonly **CC-BY-4.0**; confirm on each card you use).

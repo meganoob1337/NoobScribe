@@ -1,3 +1,6 @@
+# Originally from https://github.com/jfgonsalves/parakeet-diarized (commit 6abadfd)
+# Copyright (c) jfgonsalves - MIT License
+# Modified by meganoob1337 for the NoobScribe project
 import os
 import tempfile
 import logging
@@ -8,6 +11,23 @@ from typing import List, Optional, Dict, Any, Union
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+
+def get_wav_duration_seconds(audio_path: str) -> Optional[float]:
+    """
+    Return duration in seconds for a WAV file, or None if unreadable.
+    """
+    try:
+        with wave.open(audio_path, "rb") as wf:
+            frames = wf.getnframes()
+            rate = wf.getframerate()
+            if rate <= 0:
+                return None
+            return frames / float(rate)
+    except Exception as e:
+        logger.debug("Could not read WAV duration for %s: %s", audio_path, e)
+        return None
+
 
 def split_audio_into_chunks(audio_path: str, chunk_duration: int = 300) -> List[str]:
     """
@@ -121,3 +141,63 @@ def convert_audio_to_wav(audio_path: str) -> str:
             except:
                 pass
         raise e
+
+
+def cut_audio_segment(
+    audio_path: str,
+    start_sec: float,
+    end_sec: float,
+    *,
+    max_duration_sec: float = 300.0,
+) -> str:
+    """
+    Extract [start_sec, end_sec] to a temporary 16 kHz mono WAV via ffmpeg.
+
+    Returns:
+        Path to the new WAV file (caller should delete when done).
+
+    Raises:
+        ValueError: invalid time range or duration exceeds max_duration_sec.
+        Exception: ffmpeg failure.
+    """
+    if end_sec <= start_sec:
+        raise ValueError("end_sec must be greater than start_sec")
+    duration = end_sec - start_sec
+    if duration > max_duration_sec:
+        raise ValueError(
+            f"Segment duration {duration:.1f}s exceeds maximum {max_duration_sec:.0f}s"
+        )
+
+    temp_file = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+    temp_file.close()
+    output_path = temp_file.name
+
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-ss",
+        str(start_sec),
+        "-i",
+        audio_path,
+        "-t",
+        str(duration),
+        "-c:a",
+        "pcm_s16le",
+        "-ar",
+        "16000",
+        "-ac",
+        "1",
+        output_path,
+    ]
+    logger.debug("Running ffmpeg cut: %s", " ".join(cmd))
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        try:
+            if os.path.exists(output_path):
+                os.unlink(output_path)
+        except OSError:
+            pass
+        logger.error("Error cutting audio segment: %s", result.stderr)
+        raise Exception(f"Failed to cut audio segment: {result.stderr}")
+
+    return output_path

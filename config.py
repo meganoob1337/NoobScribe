@@ -1,10 +1,11 @@
-# Configuration settings for Parakeet
+# Originally from https://github.com/jfgonsalves/parakeet-diarized (commit 6abadfd)
+# Copyright (c) jfgonsalves - MIT License
+# Modified by meganoob1337 for the NoobScribe project
+# Configuration settings for NoobScribe
 import os
 import logging
 from typing import Dict, Optional, Any
 from pathlib import Path
-
-from pydantic.types import T
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -23,9 +24,9 @@ DEFAULT_PORT = 8000
 DEBUG_MODE = os.environ.get("DEBUG", "0") == "1"
 
 # Model settings
-DEFAULT_MODEL_ID = "nvidia/parakeet-tdt-0.6b-v2"
+DEFAULT_MODEL_ID = "nvidia/canary-1b-v2"
 DEFAULT_TEMPERATURE = 0.0
-DEFAULT_CHUNK_DURATION = 500  # 5 minutes in seconds
+DEFAULT_CHUNK_DURATION = 20  # seconds per chunk for long audio
 
 # Hugging Face configuration
 HF_TOKEN = os.environ.get("HUGGINGFACE_ACCESS_TOKEN")
@@ -37,7 +38,7 @@ DEFAULT_INCLUDE_DIARIZATION_IN_TEXT = True  # Whether to include speaker labels 
 
 
 class Config:
-    """Global configuration for Parakeet"""
+    """Global configuration for NoobScribe"""
 
     # Singleton instance
     _instance = None
@@ -66,10 +67,32 @@ class Config:
         self.include_diarization_in_text = os.environ.get("INCLUDE_DIARIZATION_IN_TEXT", str(DEFAULT_INCLUDE_DIARIZATION_IN_TEXT)).lower() == "true"
         self.default_num_speakers = DEFAULT_NUM_SPEAKERS
 
+        # Speaker embedding settings
+        self.speaker_similarity_threshold = float(os.environ.get("SPEAKER_SIMILARITY_THRESHOLD", "0.7"))
+        self.chromadb_path = os.environ.get("CHROMADB_PATH", "./data/speakers")
+        Path(self.chromadb_path).mkdir(parents=True, exist_ok=True)
+
+        # Local model paths (optional; offline / no HuggingFace download)
+        self.model_path = os.environ.get("MODEL_PATH", "").strip() or None
+        self.diarization_model_path = os.environ.get("DIARIZATION_MODEL_PATH", "").strip() or None
+
+        # Recordings + SQLite
+        self.recordings_path = os.environ.get("RECORDINGS_PATH", "./data/recordings")
+        Path(self.recordings_path).mkdir(parents=True, exist_ok=True)
+        self.database_url = os.environ.get("DATABASE_URL", "sqlite+aiosqlite:///./data/noobscribe.db")
 
         # File paths
-        self.temp_dir = os.environ.get("TEMP_DIR", "/tmp/parakeet")
+        self.temp_dir = os.environ.get("TEMP_DIR", "/tmp/noobscribe")
         Path(self.temp_dir).mkdir(parents=True, exist_ok=True)
+
+        # Spoken language ID (SpeechBrain) when API ``language`` is omitted
+        self.language_id_model_id = os.environ.get(
+            "LANGUAGE_ID_MODEL_ID", "speechbrain/lang-id-voxlingua107-ecapa"
+        )
+        _lid_savedir = os.environ.get("LANGUAGE_ID_SAVEDIR", "").strip()
+        self.language_id_savedir = _lid_savedir or str(Path(self.temp_dir) / "speechbrain_lang_id")
+        Path(self.language_id_savedir).mkdir(parents=True, exist_ok=True)
+        self.language_id_max_audio_seconds = int(os.environ.get("LANGUAGE_ID_MAX_AUDIO_SECONDS", "30"))
 
         logger.debug(f"Initialized configuration: debug={self.debug}, model={self.model_id}")
 
@@ -93,7 +116,17 @@ class Config:
             "chunk_duration": self.chunk_duration,
             "enable_diarization": self.enable_diarization,
             "include_diarization_in_text": self.include_diarization_in_text,
-            "has_hf_token": self.hf_token is not None
+            "has_hf_token": self.hf_token is not None,
+            "speaker_similarity_threshold": self.speaker_similarity_threshold,
+            "chromadb_path": self.chromadb_path,
+            "model_path": self.model_path,
+            "diarization_model_path": self.diarization_model_path,
+            "recordings_path": self.recordings_path,
+            "database_url": self.database_url,
+            "temp_dir": self.temp_dir,
+            "language_id_model_id": self.language_id_model_id,
+            "language_id_savedir": self.language_id_savedir,
+            "language_id_max_audio_seconds": self.language_id_max_audio_seconds,
         }
 
 

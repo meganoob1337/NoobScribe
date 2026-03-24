@@ -1,0 +1,35 @@
+# Default Docker Compose: local GPU, port 8000. See DOCKER_README.md.
+services:
+  noobscribe-api:
+    build: .
+    container_name: noobscribe-api
+    ports:
+      - "8000:8000"
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8000
+      - DEBUG=${DEBUG:-0}
+      - ENABLE_DIARIZATION=${ENABLE_DIARIZATION:-true}
+      - INCLUDE_DIARIZATION_IN_TEXT=${INCLUDE_DIARIZATION_IN_TEXT:-true}
+      - MODEL_ID=${MODEL_ID:-nvidia/canary-1b-v2}
+      - MODEL_PATH=${MODEL_PATH:-}
+      - DIARIZATION_MODEL_PATH=${DIARIZATION_MODEL_PATH:-}
+      - TEMPERATURE=${TEMPERATURE:-0.0}
+      - CHUNK_DURATION=${CHUNK_DURATION:-10}
+      - HUGGINGFACE_ACCESS_TOKEN=${HUGGINGFACE_TOKEN:-}
+      - CHROMADB_PATH=/app/data/speakers
+      - RECORDINGS_PATH=/app/data/recordings
+      - DATABASE_URL=sqlite+aiosqlite:////app/data/noobscribe.db
+    volumes:
+      - ./huggingface:/root/.cache/huggingface
+      - ./data:/app/data
+  # Comment out if you want to use cpu only
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids:
+                 - ${GPU_DEVICE_ID:-0}
+              capabilities: [gpu]
+    restart: unless-stopped

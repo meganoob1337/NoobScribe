@@ -1,4 +1,7 @@
 #!/bin/bash
+# From https://github.com/jfgonsalves/parakeet-diarized (commit 6abadfd)
+# Copyright (c) jfgonsalves - MIT License
+# String updates for NoobScribe by meganoob1337
 set -e
 
 # Colors for terminal output
@@ -40,7 +43,7 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
         --help)
-            echo -e "${BLUE}Parakeet Whisper-Compatible API Server${NC}"
+            echo -e "${BLUE}NoobScribe API Server${NC}"
             echo -e "Usage: $0 [options]"
             echo -e "Options:"
             echo -e "  --debug             Enable debug mode"
@@ -58,7 +61,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-echo -e "${GREEN}Starting Parakeet Whisper-Compatible API Server${NC}"
+echo -e "${GREEN}Starting NoobScribe API Server${NC}"
 
 # Check for ffmpeg
 if [[ $CHECK_DEPS -eq 1 ]]; then

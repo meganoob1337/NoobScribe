@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NoobScribe — Recordings</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ["Plus Jakarta Sans", "system-ui", "sans-serif"],
+          },
+        },
+      },
+    };
+  </script>
+  <script src="api.js"></script>
+  <script src="recorder.js"></script>
+  <script src="app.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.13.5/dist/cdn.min.js"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen antialiased">
+  <div class="min-h-screen flex" x-data="noobScribeApp">
+    <!-- Mobile nav backdrop -->
+    <div
+      x-show="navOpen"
+      x-transition:enter="transition-opacity ease-out duration-200"
+      x-transition:enter-start="opacity-0"
+      x-transition:enter-end="opacity-100"
+      x-transition:leave="transition-opacity ease-in duration-150"
+      x-transition:leave-start="opacity-100"
+      x-transition:leave-end="opacity-0"
+      @click="navOpen = false"
+      @keydown.escape.window="navOpen = false"
+      class="fixed inset-0 z-40 bg-slate-950/80 backdrop-blur-sm lg:hidden"
+      x-cloak
+    ></div>
+
+    <aside
+      class="fixed inset-y-0 left-0 z-50 flex min-h-0 w-[min(18rem,88vw)] flex-col border-r border-slate-800/80 bg-slate-950 shadow-2xl shadow-violet-950/20 transition-transform duration-200 ease-out lg:static lg:min-h-screen lg:translate-x-0 lg:shadow-none"
+      :class="navOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'"
+      aria-label="Main navigation"
+    >
+      <div class="border-b border-slate-800/80 bg-gradient-to-br from-slate-900 to-slate-950 px-5 py-6">
+        <p class="text-[0.65rem] font-semibold uppercase tracking-[0.2em] text-violet-400/90">NoobScribe</p>
+        <h1 class="mt-1 text-xl font-bold tracking-tight text-white">Studio</h1>
+        <p class="mt-1 text-xs leading-relaxed text-slate-500">Transcription, diarization &amp; speaker memory</p>
+      </div>
+      <nav class="flex flex-1 flex-col gap-1 p-3">
+        <button
+          type="button"
+          @click="go('/')"
+          class="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium transition-colors"
+          :class="navActive('recordings') ? 'border border-violet-500/30 bg-violet-500/10 text-violet-100' : 'border border-transparent text-slate-400 hover:bg-slate-800/70 hover:text-white'"
+        >
+          <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-800/80 text-slate-300" aria-hidden="true">
+            <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 10h16M4 14h10M4 18h10" /></svg>
+          </span>
+          Recordings
+        </button>
+        <button
+          type="button"
+          @click="go('/upload')"
+          class="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium transition-colors"
+          :class="navActive('upload') ? 'border border-violet-500/30 bg-violet-500/10 text-violet-100' : 'border border-transparent text-slate-400 hover:bg-slate-800/70 hover:text-white'"
+        >
+          <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-800/80 text-slate-300" aria-hidden="true">
+            <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5-5m0 0l5 5m-5-5v12" /></svg>
+          </span>
+          Upload
+        </button>
+        <button
+          type="button"
+          @click="go('/record')"
+          class="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium transition-colors"
+          :class="navActive('record') ? 'border border-violet-500/30 bg-violet-500/10 text-violet-100' : 'border border-transparent text-slate-400 hover:bg-slate-800/70 hover:text-white'"
+        >
+          <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-800/80 text-slate-300" aria-hidden="true">
+            <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" /></svg>
+          </span>
+          Record
+        </button>
+        <button
+          type="button"
+          @click="go('/speakers')"
+          class="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium transition-colors"
+          :class="navActive('speakers') ? 'border border-violet-500/30 bg-violet-500/10 text-violet-100' : 'border border-transparent text-slate-400 hover:bg-slate-800/70 hover:text-white'"
+        >
+          <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-800/80 text-slate-300" aria-hidden="true">
+            <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
+          </span>
+          Speakers
+        </button>
+        <a
+          href="/docs"
+          @click="navOpen = false"
+          class="mt-auto flex w-full items-center gap-3 rounded-xl border border-slate-700/80 px-3 py-2.5 text-left text-sm font-medium text-slate-400 transition-colors hover:border-slate-600 hover:bg-slate-800/50 hover:text-white"
+        >
+          <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-800/80 text-slate-300" aria-hidden="true">
+            <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /></svg>
+          </span>
+          API docs
+        </a>
+      </nav>
+      <div class="border-t border-slate-800/80 p-4">
+        <div x-show="health && !healthError" class="space-y-1 text-xs text-slate-500" x-cloak>
+          <div class="flex items-center gap-2">
+            <span class="h-1.5 w-1.5 shrink-0 rounded-full" :class="health.model_loaded ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]' : 'bg-amber-400'"></span>
+            <span x-text="health.model_loaded ? 'Model ready' : 'Model not loaded'"></span>
+          </div>
+          <p class="line-clamp-2 font-mono text-[0.65rem] text-slate-600" x-text="health.config?.model_id || ''"></p>
+        </div>
+        <p x-show="healthError" class="text-xs text-amber-200/90" x-text="'API: ' + healthError"></p>
+      </div>
+    </aside>
+
+    <div class="flex min-w-0 flex-1 flex-col">
+      <header class="sticky top-0 z-30 flex items-center gap-3 border-b border-slate-800/80 bg-slate-950/95 px-4 py-3 backdrop-blur-md lg:hidden">
+        <button
+          type="button"
+          @click="navOpen = true"
+          class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800"
+          aria-label="Open menu"
+        >
+          <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+          </svg>
+        </button>
+        <div class="min-w-0 flex-1">
+          <p class="truncate text-sm font-semibold text-white">NoobScribe</p>
+          <p class="truncate text-xs text-slate-500" x-show="health && !healthError">
+            <span x-text="health.model_loaded ? 'Ready' : 'Starting…'"></span>
+          </p>
+        </div>
+      </header>
+
+      <main class="relative flex-1 px-4 py-6 sm:px-6 lg:px-10 lg:py-8">
+        <div class="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(ellipse_80%_50%_at_50%_-20%,rgba(124,58,237,0.12),transparent)] lg:bg-[radial-gradient(ellipse_60%_40%_at_70%_0%,rgba(124,58,237,0.1),transparent)]"></div>
+        <div class="mx-auto max-w-5xl">
+    <div x-show="healthError" class="mb-4 rounded-xl border border-amber-500/20 bg-amber-950/40 p-3 text-sm text-amber-100 lg:hidden" x-text="'API: ' + healthError"></div>
+
+    <!-- List -->
+    <section x-show="route.name === 'list'" x-cloak class="space-y-5">
+      <div class="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h2 class="text-xl font-semibold tracking-tight text-white">Recordings</h2>
+          <p class="mt-1 text-sm text-slate-500">Open a row to transcribe, diarize, and review.</p>
+        </div>
+        <div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+          <button type="button" @click="go('/upload')" class="rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-medium text-white shadow-lg shadow-violet-950/30 transition hover:bg-violet-500">New upload</button>
+          <button type="button" @click="go('/record')" class="rounded-xl border border-slate-600 bg-slate-800/80 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-slate-700">Record in browser</button>
+        </div>
+      </div>
+      <p x-show="listError" class="text-sm text-red-400" x-text="listError"></p>
+      <div x-show="listLoading && recordings.length === 0" class="rounded-xl border border-slate-800/60 bg-slate-900/30 py-12 text-center text-slate-500">Loading…</div>
+      <div class="space-y-2 sm:hidden">
+        <template x-for="r in recordings" :key="'m-' + r.id">
+          <button
+            type="button"
+            @click="go('/r/' + r.id)"
+            class="w-full rounded-2xl border border-slate-800/80 bg-slate-900/40 p-4 text-left transition active:scale-[0.99] hover:border-slate-700 hover:bg-slate-900/60"
+          >
+            <p class="font-medium text-white" x-text="r.name"></p>
+            <div class="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500">
+              <span x-text="formatDate(r.created_at)"></span>
+              <span x-text="r.duration_seconds != null ? Math.round(r.duration_seconds) + 's' : '—'"></span>
+              <span x-text="r.transcription_count + ' transcripts'"></span>
+            </div>
+          </button>
+        </template>
+      </div>
+      <div class="hidden overflow-x-auto rounded-2xl border border-slate-800/80 sm:block">
+        <table class="min-w-full text-sm">
+          <thead class="bg-slate-900 text-slate-400 text-left">
+            <tr>
+              <th class="px-4 py-3 font-medium">Name</th>
+              <th class="px-4 py-3 font-medium">Created</th>
+              <th class="px-4 py-3 font-medium">Duration</th>
+              <th class="px-4 py-3 font-medium">Transcripts</th>
+            </tr>
+          </thead>
+          <tbody>
+            <template x-for="r in recordings" :key="r.id">
+              <tr class="border-t border-slate-800 hover:bg-slate-900/50 cursor-pointer" @click="go('/r/' + r.id)">
+                <td class="px-4 py-3 text-white" x-text="r.name"></td>
+                <td class="px-4 py-3 text-slate-400" x-text="formatDate(r.created_at)"></td>
+                <td class="px-4 py-3 text-slate-400" x-text="r.duration_seconds != null ? (Math.round(r.duration_seconds) + 's') : '—'"></td>
+                <td class="px-4 py-3 text-slate-400" x-text="r.transcription_count"></td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+      <button
+        type="button"
+        x-show="hasMore"
+        @click="loadMore()"
+        class="text-sm font-medium text-violet-400 hover:text-violet-300 disabled:opacity-50"
+        :disabled="listLoading"
+        x-text="listLoading ? 'Loading…' : 'Load more'"
+      ></button>
+    </section>
+
+    <!-- Upload -->
+    <section x-show="route.name === 'upload'" x-cloak class="max-w-lg space-y-4">
+      <h2 class="text-lg font-medium text-white">Upload recording</h2>
+      <p x-show="uploadError" class="text-red-400 text-sm" x-text="uploadError"></p>
+      <label class="block text-sm text-slate-400">Display name (optional)</label>
+      <input type="text" x-model="uploadName" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white" placeholder="Meeting notes" />
+      <label class="block text-sm text-slate-400">Audio file</label>
+      <input type="file" accept="audio/*,.wav,.mp3,.m4a,.flac,.ogg" @change="onUploadFile($event)" class="block w-full text-sm text-slate-400" />
+      <button type="button" @click="submitUpload()" :disabled="uploadBusy" class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-medium" x-text="uploadBusy ? 'Uploading…' : 'Upload'"></button>
+    </section>
+
+    <!-- Record in browser -->
+    <section x-show="route.name === 'record'" x-cloak class="max-w-2xl space-y-6">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <h2 class="text-lg font-medium text-white">Record in browser</h2>
+        <button type="button" @click="go('/')" class="text-sm text-slate-400 hover:text-white">← Back</button>
+      </div>
+      <p class="text-xs text-slate-500 leading-relaxed">
+        Pick a <strong class="text-slate-400">browser tab</strong> or <strong class="text-slate-400">full screen</strong> in the share dialog for system audio. Many standalone app windows do not expose audio to the browser. You can combine tab/screen capture with your microphone below.
+      </p>
+      <p x-show="recordError" class="text-red-400 text-sm" x-text="recordError"></p>
+
+      <div class="space-y-4">
+        <div class="p-4 rounded-xl border border-slate-800 bg-slate-900/40 space-y-3">
+          <div class="flex flex-wrap items-center gap-3">
+            <span class="text-sm font-medium text-white w-40 shrink-0">Window / tab</span>
+            <button type="button" @click="toggleWindowCapture()" :disabled="recorderState === 'recording' || recordedBlob"
+              class="px-3 py-2 rounded-lg text-sm font-medium"
+              :class="windowCaptureOn ? 'bg-rose-900/50 text-rose-200 border border-rose-800 hover:bg-rose-900/70' : 'bg-slate-800 text-white border border-slate-600 hover:bg-slate-700'"
+              x-text="windowCaptureOn ? 'Stop window audio' : 'Select window / tab…'"></button>
+            <span class="flex items-center gap-2 text-xs text-slate-500">
+              <span class="inline-block w-2 h-2 rounded-full shrink-0" :class="windowCaptureOn ? 'bg-emerald-500' : 'bg-slate-600'"></span>
+              <span x-text="windowCaptureOn ? 'Active' : 'Off'"></span>
+            </span>
+          </div>
+          <div class="flex items-center gap-2 pl-0 sm:pl-44">
+            <div class="flex-1 h-2 rounded-full bg-slate-800 overflow-hidden border border-slate-700">
+              <div class="h-full bg-cyan-500/90 transition-[width] duration-75 ease-out rounded-full" :style="'width:' + Math.round(windowLevel * 100) + '%'"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="p-4 rounded-xl border border-slate-800 bg-slate-900/40 space-y-3">
+          <div class="flex flex-wrap items-center gap-3">
+            <span class="text-sm font-medium text-white w-40 shrink-0">Microphone</span>
+            <button type="button" @click="toggleMicCapture()" :disabled="recorderState === 'recording' || recordedBlob"
+              class="px-3 py-2 rounded-lg text-sm font-medium"
+              :class="micCaptureOn ? 'bg-rose-900/50 text-rose-200 border border-rose-800 hover:bg-rose-900/70' : 'bg-slate-800 text-white border border-slate-600 hover:bg-slate-700'"
+              x-text="micCaptureOn ? 'Disable microphone' : 'Enable microphone'"></button>
+            <span class="flex items-center gap-2 text-xs text-slate-500">
+              <span class="inline-block w-2 h-2 rounded-full shrink-0" :class="micCaptureOn ? 'bg-emerald-500' : 'bg-slate-600'"></span>
+              <span x-text="micCaptureOn ? 'Active' : 'Off'"></span>
+            </span>
+          </div>
+          <div class="flex items-center gap-2 pl-0 sm:pl-44">
+            <div class="flex-1 h-2 rounded-full bg-slate-800 overflow-hidden border border-slate-700">
+              <div class="h-full bg-violet-500/90 transition-[width] duration-75 ease-out rounded-full" :style="'width:' + Math.round(micLevel * 100) + '%'"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-3" x-show="!recordedBlob">
+        <button type="button" @click="startRec()" :disabled="!canStartRecording()"
+          class="px-4 py-2 rounded-lg text-white text-sm font-medium bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed"
+          x-show="recorderState !== 'recording'">Start recording</button>
+        <button type="button" @click="stopRec()" x-show="recorderState === 'recording'"
+          class="px-4 py-2 rounded-lg text-white text-sm font-medium bg-red-600 hover:bg-red-500">Stop</button>
+        <span x-show="recorderState === 'recording'" class="text-sm text-slate-400 font-mono" x-text="formatRecordElapsed()"></span>
+      </div>
+
+      <div x-show="recordedBlob && recordedUrl" class="space-y-4 p-4 rounded-xl border border-slate-800 bg-slate-900/30">
+        <h3 class="text-sm font-medium text-white">Preview</h3>
+        <audio :src="recordedUrl" controls class="w-full max-w-xl"></audio>
+        <label class="block text-sm text-slate-400">Display name (optional)</label>
+        <input type="text" x-model="recordName" class="w-full max-w-xl px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white" placeholder="Meeting capture" />
+        <div class="flex flex-wrap gap-2">
+          <button type="button" @click="uploadRecording()" :disabled="recordUploadBusy"
+            class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm font-medium"
+            x-text="recordUploadBusy ? 'Uploading…' : 'Upload to server'"></button>
+          <button type="button" @click="discardRecording()" :disabled="recordUploadBusy"
+            class="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-white text-sm border border-slate-600">Discard</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Detail -->
+    <section x-show="route.name === 'detail'" x-cloak class="space-y-6">
+      <p x-show="recLoading" class="text-slate-500">Loading…</p>
+      <p x-show="recError" class="text-red-400 text-sm" x-text="recError"></p>
+      <template x-if="recording && !recLoading">
+        <div class="space-y-6">
+          <div class="flex flex-wrap gap-2 items-center">
+            <button type="button" @click="go('/')" class="text-sm text-slate-400 hover:text-white">← Back</button>
+          </div>
+          <div>
+            <label class="text-sm text-slate-400">Name</label>
+            <div class="mt-1 flex flex-col gap-2 sm:flex-row">
+              <input type="text" x-model="recording.name" class="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-white" />
+              <button type="button" @click="renameRecording()" class="shrink-0 rounded-lg bg-slate-800 px-3 py-2 text-sm hover:bg-slate-700 sm:self-stretch">Save name</button>
+            </div>
+          </div>
+          <div>
+            <h3 class="text-sm font-medium text-slate-400 mb-2">Audio</h3>
+            <audio :src="audioSrc(recording.id)" controls class="w-full"></audio>
+          </div>
+          <div class="p-4 rounded-xl border border-slate-800 bg-slate-900/50 space-y-3">
+            <h3 class="text-white font-medium">Transcribe & diarize</h3>
+            <p x-show="transcribeError" class="text-red-400 text-sm" x-text="transcribeError"></p>
+            <div class="grid sm:grid-cols-2 gap-3 text-sm">
+              <div>
+                <label class="text-slate-400">Language (optional)</label>
+                <input type="text" x-model="transcribeOpts.language" placeholder="en" class="mt-1 w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-white" />
+              </div>
+              <div class="flex flex-col gap-2 justify-end">
+                <label class="inline-flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" x-model="transcribeOpts.diarize" class="rounded border-slate-600" />
+                  <span>Diarize</span>
+                </label>
+                <label class="inline-flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" x-model="transcribeOpts.word_timestamps" class="rounded border-slate-600" />
+                  <span>Word timestamps</span>
+                </label>
+                <label class="inline-flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" x-model="transcribeOpts.include_diarization_in_text" class="rounded border-slate-600" />
+                  <span>Speaker labels in text</span>
+                </label>
+              </div>
+            </div>
+            <button type="button" @click="runTranscribe()" :disabled="transcribeBusy" class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-medium" x-text="transcribeBusy ? 'Running…' : 'Run transcription'"></button>
+          </div>
+          <div>
+            <h3 class="text-sm font-medium text-slate-400 mb-2">Stored transcriptions</h3>
+            <ul class="space-y-2">
+              <template x-for="t in (recording.transcriptions || [])" :key="t.id">
+                <li>
+                  <button type="button" @click="go('/r/' + recording.id + '/t/' + t.id)" class="text-left w-full px-4 py-3 rounded-lg border border-slate-800 hover:bg-slate-900/50 text-sm">
+                    <span class="text-white" x-text="formatDate(t.created_at)"></span>
+                    <span class="text-slate-500 ml-2" x-text="t.diarization_enabled ? '· diarized' : ''"></span>
+                  </button>
+                </li>
+              </template>
+            </ul>
+            <p x-show="!(recording.transcriptions || []).length" class="text-slate-500 text-sm">No transcriptions yet.</p>
+          </div>
+          <button type="button" @click="deleteRecording()" class="text-sm text-red-400 hover:text-red-300">Delete recording</button>
+        </div>
+      </template>
+    </section>
+
+    <!-- Transcript viewer -->
+    <section x-show="route.name === 'transcript'" x-cloak class="space-y-4">
+      <button type="button" @click="go('/r/' + route.recordingId)" class="text-sm text-slate-400 hover:text-white">← Recording</button>
+      <p x-show="trLoading" class="text-slate-500">Loading…</p>
+      <p x-show="trError" class="text-red-400 text-sm" x-text="trError"></p>
+      <template x-if="transcription && !trLoading">
+        <div class="space-y-6">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <h2 class="text-lg font-medium text-white">Transcription</h2>
+            <button type="button" @click="downloadTranscription()" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-sm text-white border border-slate-600">Download .txt</button>
+          </div>
+          <div class="p-4 rounded-xl bg-slate-900/50 border border-slate-800 text-slate-200 text-sm whitespace-pre-wrap max-h-96 overflow-y-auto" x-text="formattedTranscript()"></div>
+          <div x-show="(transcription.speakers || []).length">
+            <h3 class="text-sm font-medium text-slate-400 mb-2">Speakers (save embedding)</h3>
+            <div class="space-y-2">
+              <template x-for="s in (transcription.speakers || [])" :key="s.id">
+                <div class="flex flex-wrap items-center gap-2 p-3 rounded-lg border border-slate-800 bg-slate-900/30">
+                  <span class="text-white font-mono text-sm" x-text="s.id"></span>
+                  <span x-show="s.display_name" class="text-indigo-300 text-sm" x-text="s.display_name"></span>
+                  <span x-show="s.matched" class="text-xs text-green-500">matched</span>
+                  <button type="button" @click="openSaveSpeaker(s)" class="ml-auto text-sm px-3 py-1 rounded bg-indigo-600 hover:bg-indigo-500" x-show="s.embedding && s.embedding.length">Save as…</button>
+                </div>
+              </template>
+            </div>
+          </div>
+          <div x-show="saveSpeakerEmbedding" class="p-4 rounded-xl border border-indigo-900/50 bg-indigo-950/20 space-y-2">
+            <p class="text-sm text-slate-300">Save this embedding to the speaker database for future matching.</p>
+            <label class="block text-xs text-slate-500">Speaker</label>
+            <select x-model="saveSpeakerTargetId" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white text-sm">
+              <option value="">New speaker…</option>
+              <template x-for="sp in speakers" :key="sp.id">
+                <option :value="sp.id" x-text="sp.display_name + ' · ' + sp.embedding_count + ' emb. · ' + sp.id.slice(0, 8) + '…'"></option>
+              </template>
+            </select>
+            <input type="text" x-show="!saveSpeakerTargetId" x-model="saveSpeakerLabel" placeholder="Speaker name" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white" />
+            <p x-show="saveSpeakerError" class="text-red-400 text-sm" x-text="saveSpeakerError"></p>
+            <div class="flex gap-2">
+              <button type="button" @click="confirmSaveSpeaker()" :disabled="saveSpeakerBusy" class="px-3 py-2 rounded-lg bg-indigo-600 text-sm" x-text="saveSpeakerBusy ? 'Saving…' : (saveSpeakerTargetId ? 'Add embedding' : 'Save')"></button>
+              <button type="button" @click="cancelSaveSpeaker()" class="px-3 py-2 rounded-lg bg-slate-800 text-sm">Cancel</button>
+            </div>
+          </div>
+          <div>
+            <h3 class="text-sm font-medium text-slate-400 mb-2">Segments</h3>
+            <ul class="space-y-2 max-h-96 overflow-y-auto text-sm">
+              <template x-for="(seg, idx) in (transcription.segments || [])" :key="idx">
+                <li class="p-3 rounded-lg border border-slate-800 bg-slate-900/20 flex items-start gap-2">
+                  <div class="min-w-0 flex-1">
+                    <span class="text-slate-500" x-text="(seg.start != null ? seg.start.toFixed(1) : '?') + '–' + (seg.end != null ? seg.end.toFixed(1) : '?') + 's'"></span>
+                    <span x-show="seg.speaker" class="text-indigo-400 ml-2" x-text="resolveSpeaker(seg.speaker)"></span>
+                    <p class="text-slate-200 mt-1" x-text="_stripDiarizationPrefix(seg.text, seg.speaker)"></p>
+                  </div>
+                  <button type="button" x-show="transcriptSegmentCanPlay(seg)" @click="toggleTranscriptSegmentPlay(idx)"
+                    class="shrink-0 w-8 h-8 rounded-md bg-slate-800 hover:bg-slate-700 text-sm text-white border border-slate-600 flex items-center justify-center leading-none"
+                    :aria-label="transcriptSegmentPlayButtonState(idx) === 'pause' ? 'Pause segment audio' : 'Play segment audio'"
+                    x-text="transcriptSegmentPlayButtonState(idx) === 'pause' ? '⏸' : '▶'"></button>
+                </li>
+              </template>
+            </ul>
+          </div>
+        </div>
+      </template>
+    </section>
+
+    <!-- Speakers -->
+    <section x-show="route.name === 'speakers'" x-cloak class="space-y-6">
+      <h2 class="text-lg font-medium text-white">Speakers</h2>
+      <p x-show="spError" class="text-red-400 text-sm" x-text="spError"></p>
+      <p x-show="spLoading" class="text-slate-500">Loading…</p>
+
+      <div class="rounded-xl border border-slate-800 bg-slate-900/20 overflow-hidden">
+        <button type="button" @click="speakerEmbeddingSectionExpanded = !speakerEmbeddingSectionExpanded"
+          class="w-full border-b border-slate-800 bg-slate-950/50 px-4 py-3 flex items-start gap-3 text-left hover:bg-slate-900/40 active:bg-slate-900/60 transition-colors rounded-t-xl cursor-pointer"
+          :aria-expanded="speakerEmbeddingSectionExpanded">
+          <span class="text-slate-400 text-sm w-6 shrink-0 mt-0.5 font-mono select-none" x-text="speakerEmbeddingSectionExpanded ? '▼' : '▶'"></span>
+          <div class="min-w-0 flex-1">
+            <h3 class="text-white font-medium">Add or update speaker embedding</h3>
+            <p class="text-xs text-slate-500 mt-1" x-show="speakerEmbeddingSectionExpanded">Enroll from a short audio clip (diarized server-side) or paste a raw embedding vector.</p>
+            <p class="text-xs text-slate-600 mt-1" x-show="!speakerEmbeddingSectionExpanded">Click to expand — audio snippet or manual JSON</p>
+          </div>
+        </button>
+
+        <div class="p-4 space-y-4" x-show="speakerEmbeddingSectionExpanded" x-cloak>
+          <div x-show="saveSpeakerEmbedding" x-cloak class="p-4 rounded-lg border border-indigo-500/40 bg-indigo-950/30 ring-1 ring-indigo-500/20 space-y-3">
+            <div class="flex items-start justify-between gap-2">
+              <h4 class="text-sm font-medium text-indigo-200">Save embedding</h4>
+              <button type="button" @click="cancelSaveSpeaker()" class="text-xs text-slate-400 hover:text-white shrink-0">Dismiss</button>
+            </div>
+            <p class="text-sm text-slate-300">Choose a new or existing speaker to store this embedding for matching.</p>
+            <label class="block text-xs text-slate-500">Speaker</label>
+            <select x-model="saveSpeakerTargetId" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white text-sm">
+              <option value="">New speaker…</option>
+              <template x-for="sp in speakers" :key="sp.id">
+                <option :value="sp.id" x-text="sp.display_name + ' · ' + sp.embedding_count + ' emb. · ' + sp.id.slice(0, 8) + '…'"></option>
+              </template>
+            </select>
+            <input type="text" x-show="!saveSpeakerTargetId" x-model="saveSpeakerLabel" placeholder="New speaker name" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white" />
+            <p x-show="saveSpeakerError" class="text-red-400 text-sm" x-text="saveSpeakerError"></p>
+            <div class="flex flex-wrap gap-2">
+              <button type="button" @click="confirmSaveSpeaker()" :disabled="saveSpeakerBusy" class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm text-white disabled:opacity-50" x-text="saveSpeakerBusy ? 'Saving…' : (saveSpeakerTargetId ? 'Add embedding' : 'Create speaker')"></button>
+              <button type="button" @click="cancelSaveSpeaker()" class="px-4 py-2 rounded-lg bg-slate-800 text-sm text-slate-300 border border-slate-600">Cancel</button>
+            </div>
+          </div>
+
+          <div class="flex gap-1 p-1 rounded-lg bg-slate-950 border border-slate-800">
+            <button type="button" @click="speakerEmbeddingTab = 'audio'"
+              class="flex-1 px-3 py-2.5 rounded-md text-sm font-medium transition-colors"
+              :class="speakerEmbeddingTab === 'audio' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-white hover:bg-slate-800/80'">From audio snippet</button>
+            <button type="button" @click="speakerEmbeddingTab = 'manual'"
+              class="flex-1 px-3 py-2.5 rounded-md text-sm font-medium transition-colors"
+              :class="speakerEmbeddingTab === 'manual' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-white hover:bg-slate-800/80'">Manual embedding</button>
+          </div>
+
+          <div x-show="speakerEmbeddingTab === 'audio'" x-cloak class="space-y-3">
+            <p class="text-xs text-slate-500">Upload or record a short clip. The server diarizes and returns one embedding per speaker. Audio is stored as a hidden recording (not on the home list) so snippet playback works later.</p>
+            <label class="block text-xs text-slate-500">Label (optional)</label>
+            <input type="text" x-model="extractSnippetName" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white text-sm" placeholder="Enrollment clip" />
+            <div class="flex flex-wrap gap-2 items-center">
+              <input type="file" accept="audio/*,.webm,.wav,.mp3,.ogg,.m4a" @change="onSpExtractFileInput($event)" class="text-sm text-slate-300 max-w-full" />
+            </div>
+            <div class="flex flex-wrap gap-2 items-center">
+              <button type="button" @click="toggleSpExtractMicRecord()" class="px-3 py-2 rounded-lg text-sm font-medium border"
+                :class="spExtractRecording ? 'bg-red-900/50 text-red-100 border-red-800' : 'bg-slate-800 text-white border-slate-600 hover:bg-slate-700'"
+                x-text="spExtractRecording ? 'Stop microphone' : 'Record microphone'"></button>
+              <button type="button" @click="discardSpExtractRecording()" x-show="spExtractBlob || spExtractFile" class="px-3 py-2 rounded-lg text-sm bg-slate-800 border border-slate-600 text-slate-300 hover:bg-slate-700">Clear clip</button>
+            </div>
+            <div x-show="spExtractUrl" class="space-y-1">
+              <p class="text-xs text-slate-500">Preview</p>
+              <audio :src="spExtractUrl" controls class="w-full max-w-xl"></audio>
+            </div>
+            <p x-show="extractError" class="text-red-400 text-sm" x-text="extractError"></p>
+            <div class="flex flex-wrap gap-2">
+              <button type="button" @click="runExtractFromAudio()" :disabled="extractBusy" class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm" x-text="extractBusy ? 'Processing…' : 'Extract speaker embeddings'"></button>
+              <button type="button" @click="clearExtractResult()" x-show="extractResult" class="px-3 py-2 rounded-lg bg-slate-800 text-sm text-slate-300 border border-slate-600">Dismiss results</button>
+            </div>
+            <template x-if="extractResult">
+              <div class="mt-2 space-y-4 border-t border-slate-800 pt-4">
+                <p class="text-xs text-slate-500 font-mono" x-show="extractResult.recording_id">Recording <span x-text="extractResult.recording_id"></span> (hidden from library list)</p>
+                <div class="p-3 rounded-lg bg-slate-900/50 border border-slate-800 text-sm text-slate-200 whitespace-pre-wrap max-h-48 overflow-y-auto" x-text="extractFormattedTranscript()"></div>
+                <div x-show="(extractResult.speakers || []).length">
+                  <h4 class="text-sm font-medium text-slate-400 mb-2">Detected speakers</h4>
+                  <p class="text-xs text-slate-500 mb-2">Use <span class="text-slate-400">Save as…</span> — the form opens at the top of this card.</p>
+                  <div class="space-y-2">
+                    <template x-for="s in (extractResult.speakers || [])" :key="s.id">
+                      <div class="flex flex-wrap items-center gap-2 p-3 rounded-lg border border-slate-800 bg-slate-900/30">
+                        <span class="text-white font-mono text-sm" x-text="s.id"></span>
+                        <span x-show="s.display_name" class="text-indigo-300 text-sm" x-text="s.display_name"></span>
+                        <span x-show="s.matched" class="text-xs text-green-500">matched</span>
+                        <button type="button" @click="openSaveSpeaker(s)" class="ml-auto text-sm px-3 py-1 rounded bg-indigo-600 hover:bg-indigo-500" x-show="s.embedding && s.embedding.length">Save as…</button>
+                      </div>
+                    </template>
+                  </div>
+                </div>
+              </div>
+            </template>
+          </div>
+
+          <div x-show="speakerEmbeddingTab === 'manual'" x-cloak class="space-y-3">
+            <p class="text-xs text-slate-500">Paste a JSON array of floats (same dimension as diarization embeddings).</p>
+            <label class="block text-xs text-slate-500">Speaker</label>
+            <select x-model="manualTargetSpeakerId" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white text-sm">
+              <option value="">New speaker…</option>
+              <template x-for="sp in speakers" :key="sp.id">
+                <option :value="sp.id" x-text="sp.display_name + ' · ' + sp.embedding_count + ' emb. · ' + sp.id.slice(0, 8) + '…'"></option>
+              </template>
+            </select>
+            <input type="text" x-show="!manualTargetSpeakerId" x-model="newSpeakerName" placeholder="Name" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white" />
+            <label class="block text-xs text-slate-500">Embedding JSON</label>
+            <textarea x-model="manualEmbeddingJson" rows="5" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white font-mono text-xs" placeholder="[0.1, 0.2, ...]"></textarea>
+            <button type="button" @click="submitManualSpeaker()" :disabled="manualBusy" class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm" x-text="manualBusy ? 'Saving…' : (manualTargetSpeakerId ? 'Add embedding' : 'Create speaker')"></button>
+          </div>
+        </div>
+      </div>
+
+      <h3 class="text-sm font-medium text-slate-400 uppercase tracking-wide">Stored speakers</h3>
+      <ul class="space-y-2">
+        <template x-for="s in speakers" :key="s.id">
+          <li class="rounded-lg border border-slate-800 bg-slate-900/30 overflow-hidden">
+            <div class="flex items-stretch min-h-[3rem]">
+              <button type="button" @click="toggleSpeakerRow(s.id)"
+                class="flex-1 min-w-0 flex flex-wrap items-center gap-x-2 gap-y-1 px-3 py-3 text-left hover:bg-slate-800/40 active:bg-slate-800/60 transition-colors cursor-pointer"
+                :aria-expanded="speakerExpanded(s.id)">
+                <span class="text-slate-400 font-mono text-xs w-6 shrink-0 select-none" x-text="speakerExpanded(s.id) ? '▼' : '▶'"></span>
+                <span class="text-white font-medium" x-text="s.display_name"></span>
+                <span class="text-slate-500 text-xs font-mono truncate max-w-[10rem] sm:max-w-xs" x-text="s.id"></span>
+                <span class="text-slate-400 text-sm" x-text="s.embedding_count + ' embeddings'"></span>
+              </button>
+              <button type="button" @click.stop="deleteSpeaker(s.id)"
+                class="shrink-0 px-4 py-3 text-sm text-red-400 hover:text-red-300 hover:bg-red-950/20 border-l border-slate-800 self-stretch flex items-center">
+                Delete speaker
+              </button>
+            </div>
+            <div x-show="speakerExpanded(s.id)" x-cloak class="border-t border-slate-800 px-3 pb-3 pt-2 space-y-2 bg-slate-950/40">
+              <p x-show="embeddingsLoadingFor === s.id" class="text-slate-500 text-sm">Loading embeddings…</p>
+              <template x-for="emb in embeddingsForSpeaker(s.id)" :key="s.id + '-' + emb.embedding_index">
+                <div class="rounded-md border border-slate-800/80 bg-slate-900/20 overflow-hidden">
+                  <div class="flex items-stretch min-h-[2.75rem]">
+                    <button type="button" @click="toggleEmbeddingSnippets(s.id, emb.embedding_index)"
+                      class="flex-1 min-w-0 flex flex-wrap items-center gap-x-2 gap-y-1 px-2 py-2 text-left hover:bg-slate-800/40 active:bg-slate-800/60 transition-colors cursor-pointer"
+                      :aria-expanded="embeddingSnippetsOpen(s.id, emb.embedding_index)">
+                      <span class="text-slate-400 font-mono text-xs w-7 shrink-0 select-none" x-text="embeddingSnippetsOpen(s.id, emb.embedding_index) ? '▼' : '▶'"></span>
+                      <span class="text-slate-300 text-sm">Embedding <span class="font-mono" x-text="emb.embedding_index"></span></span>
+                      <span class="text-slate-500 text-xs" x-text="formatDate(emb.created_at)"></span>
+                    </button>
+                    <button type="button" @click.stop="removeSpeakerEmbedding(s.id, emb.embedding_index)"
+                      class="shrink-0 px-3 py-2 text-xs text-red-400 hover:text-red-300 hover:bg-red-950/20 border-l border-slate-800/80 self-stretch flex items-center">
+                      Delete embedding
+                    </button>
+                  </div>
+                  <div x-show="embeddingSnippetsOpen(s.id, emb.embedding_index)" x-cloak class="border-t border-slate-800/80 px-2 pb-2 pt-1 space-y-2">
+                    <p x-show="snippetsLoadingKey === snippetKey(s.id, emb.embedding_index)" class="text-slate-500 text-xs">Loading recordings…</p>
+                    <p x-show="!(snippetsLoadingKey === snippetKey(s.id, emb.embedding_index)) && (snippetsForEmbedding(s.id, emb.embedding_index).length === 0)" class="text-slate-500 text-xs">No matching transcriptions yet.</p>
+                    <template x-for="(snip, sni) in snippetsForEmbedding(s.id, emb.embedding_index)" :key="snip.transcription_id + '-' + sni">
+                      <div class="rounded border border-slate-800 bg-slate-950/50 p-2 text-sm space-y-2">
+                        <div class="flex flex-wrap items-start gap-2">
+                          <div class="min-w-0 flex-1">
+                            <p class="text-slate-400 text-xs font-mono truncate" x-text="snip.recording_name || snip.recording_id"></p>
+                            <p class="text-slate-500 text-xs">Transcription <span class="font-mono" x-text="snip.transcription_id.slice(0, 8)"></span>… · <span x-text="snip.start != null ? snip.start.toFixed(1) : '?'"></span>–<span x-text="snip.end != null ? snip.end.toFixed(1) : '?'"></span>s</p>
+                            <p class="text-slate-300 text-xs mt-1 line-clamp-2" x-text="snip.segment_text"></p>
+                          </div>
+                          <button type="button" @click="loadSnippetAudio(snip)" class="shrink-0 px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-xs text-white border border-slate-600">Audio snippet</button>
+                        </div>
+                        <audio x-show="snip._audioSrc" :src="snip._audioSrc" controls class="w-full max-w-md"></audio>
+                      </div>
+                    </template>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </li>
+        </template>
+      </ul>
+    </section>
+
+    <footer class="mt-12 border-t border-slate-800/80 py-8 text-center text-xs text-slate-600">
+      <p>
+        <span class="text-slate-400">NoobScribe</span>
+        <span class="text-slate-600"> · </span>
+        <a href="https://github.com/meganoob1337" class="text-violet-400/90 transition hover:text-violet-300" target="_blank" rel="noopener">meganoob1337</a>
+      </p>
+    </footer>
+        </div>
+      </main>
+    </div>
+  </div>
+  <style>[x-cloak] { display: none !important; }</style>
+</body>
+</html>

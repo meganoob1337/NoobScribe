@@ -1,4 +1,4 @@
-nemo_toolkit
+nemo_toolkit[all] @ git+https://github.com/NVIDIA/NeMo.git@main
 fastapi
 uvicorn
 python-multipart
@@ -23,3 +23,9 @@ pydub
 ffmpeg-python
 soundfile
 cuda-python
+texterrors
+chromadb
+python-dotenv
+sqlalchemy>=2.0
+aiosqlite>=0.19
+speechbrain

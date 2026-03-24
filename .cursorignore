@@ -1,8 +1,7 @@
-# Originally from https://github.com/jfgonsalves/parakeet-diarized (commit 6abadfd); extended for NoobScribe
 __pycache__/
 *.py[cod]
 *$py.class
-.cursor
+
 # Environments
 .env
 .venv

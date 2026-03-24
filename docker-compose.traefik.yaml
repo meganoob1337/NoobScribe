@@ -1,0 +1,89 @@
+# =============================================================================
+# NoobScribe + Traefik (TLS / reverse proxy)
+# =============================================================================
+#
+# Use this file when Traefik already runs on the host (or another stack) and
+# exposes an external Docker network. NoobScribe joins that network only;
+# Traefik routes HTTPS to the app container (port 8000 inside the container).
+#
+# Quick start:
+#   1. Copy env.example to .env  →  cp env.example .env
+#   2. Edit .env: set NOOBSCRIBE_HOST, TRAEFIK_NETWORK, GPU_DEVICE_ID, secrets
+#   3. Ensure the external Traefik network exists, e.g.:
+#        docker network create traefik-global-proxy
+#   4. Build and run:
+#        docker compose -f docker-compose.traefik.yaml --env-file .env up -d --build
+#
+# Variables (also documented in env.example):
+#   NOOBSCRIBE_HOST      → Traefik Host(`...`) rule (public DNS name, no scheme)
+#   TRAEFIK_NETWORK      → Name of the existing external Docker network Traefik uses
+#   TRAEFIK_ENTRYPOINT   → Traefik entrypoint name (often web or websecure)
+#   TRAEFIK_CERT_RESOLVER → ACME/Let's Encrypt resolver name in Traefik static config
+#   NOOBSCRIBE_PUBLISH_PORT → Host port publish (e.g. 8000:8000); see .env / env.example
+#   GPU_DEVICE_ID        → NVIDIA device index passed to the container (e.g. 0 or 1)
+#
+# Default compose file remains docker-compose.yml (localhost:8000, no Traefik).
+# =============================================================================
+
+version: "3.8"
+
+services:
+  noobscribe-api:
+    build: .
+    container_name: noobscribe-api
+    # ports:
+      # Optional host publish for direct access (Traefik uses the Docker network to reach :8000).
+      # - "${NOOBSCRIBE_PUBLISH_PORT:-8000:8000}"
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8000
+      - DEBUG=${DEBUG:-0}
+      - ENABLE_DIARIZATION=${ENABLE_DIARIZATION:-true}
+      - INCLUDE_DIARIZATION_IN_TEXT=${INCLUDE_DIARIZATION_IN_TEXT:-true}
+      - MODEL_ID=${MODEL_ID:-nvidia/canary-1b-v2}
+      - MODEL_PATH=${MODEL_PATH:-}
+      - DIARIZATION_MODEL_PATH=${DIARIZATION_MODEL_PATH:-}
+      - TEMPERATURE=${TEMPERATURE:-0.0}
+      - CHUNK_DURATION=${CHUNK_DURATION:-10}
+      - HUGGINGFACE_ACCESS_TOKEN=${HUGGINGFACE_TOKEN:-}
+      - CHROMADB_PATH=/app/data/speakers
+      - RECORDINGS_PATH=/app/data/recordings
+      - DATABASE_URL=sqlite+aiosqlite:////app/data/noobscribe.db
+    volumes:
+      - ./huggingface:/root/.cache/huggingface
+      - ./data:/app/data
+  # Comment out if you want to use cpu only
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids:
+                 - ${GPU_DEVICE_ID:-0}
+              capabilities: [gpu]
+    restart: unless-stopped
+    networks:
+      - traefik_proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.noobscribe-api.rule=Host(`${NOOBSCRIBE_HOST:-noobscribe.localhost}`)"
+      - "traefik.http.services.noobscribe-api.loadbalancer.server.port=8000"
+      - "traefik.http.routers.noobscribe-api.entrypoints=${TRAEFIK_ENTRYPOINT:-websecure}"
+      - "traefik.http.routers.noobscribe-api.tls.certresolver=${TRAEFIK_CERT_RESOLVER:-letsencrypt}"
+      - "traefik.http.routers.noobscribe-api.middlewares=noobscribe-api-headers"
+      - "traefik.http.middlewares.noobscribe-api-headers.headers.customresponseheaders.Access-Control-Allow-Origin=*"
+      - "traefik.http.middlewares.noobscribe-api-headers.headers.customresponseheaders.Access-Control-Allow-Methods=GET,POST,PUT,DELETE,OPTIONS"
+      - "traefik.http.middlewares.noobscribe-api-headers.headers.customresponseheaders.Access-Control-Allow-Headers=Content-Type,Authorization"
+      - "traefik.http.middlewares.noobscribe-api-headers.headers.customresponseheaders.X-Content-Type-Options=nosniff"
+      - "traefik.http.middlewares.noobscribe-api-headers.headers.customresponseheaders.X-Frame-Options=DENY"
+      - "traefik.http.middlewares.noobscribe-api-headers.headers.customresponseheaders.X-XSS-Protection=1; mode=block"
+      - "traefik.http.middlewares.noobscribe-api-headers.headers.sslredirect=true"
+      - "traefik.http.middlewares.noobscribe-api-headers.headers.stsincludeSubdomains=true"
+      - "traefik.http.middlewares.noobscribe-api-headers.headers.stspreload=true"
+      - "traefik.http.middlewares.noobscribe-api-headers.headers.stsseconds=31536000"
+      - "traefik.http.routers.noobscribe-api.tls=true"
+
+networks:
+  traefik_proxy:
+    name: ${TRAEFIK_NETWORK:-traefik-global-proxy}
+    external: true
