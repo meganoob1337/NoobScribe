@@ -35,5 +35,6 @@ Per-file SPDX-style notices appear at the top of Python and shell files that tra
 | **SpeechBrain** | Spoken language identification (optional) | [SpeechBrain](https://speechbrain.github.io/) · [lang-id model (HF)](https://huggingface.co/speechbrain/lang-id-voxlingua107-ecapa) |
 | **Chroma** | Vector store for speaker embeddings | [Chroma](https://www.trychroma.com/) · [chroma-core/chroma (GitHub)](https://github.com/chroma-core/chroma) |
 | **SQLAlchemy** | Async ORM / SQLite for recordings | [SQLAlchemy](https://www.sqlalchemy.org/) |
+| **Alpine.js** | WebUI frontend reactivity | [Alpine.js](https://alpinejs.dev/) · [alpinejs/alpine (GitHub)](https://github.com/alpinejs/alpine) |
 
 Other runtime libraries are listed in **`requirements.txt`** / **`requirements.lock.txt`**. Audio I/O relies on **FFmpeg** (system dependency).
