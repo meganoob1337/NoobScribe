@@ -9,6 +9,7 @@ from typing import List, Optional, Dict, Any, Union, Tuple
 import torch
 import numpy as np
 
+from config import use_cuda
 from models import WhisperSegment, TranscriptionResponse
 
 logger = logging.getLogger(__name__)
@@ -36,12 +37,12 @@ def load_model(model_id: str = "nvidia/canary-1b-v2", model_path: Optional[str] 
             logger.info("Loading model %s", model_id)
             model = ASRModel.from_pretrained(model_name=model_id)
 
-        # Move model to GPU if available
-        if torch.cuda.is_available():
+        # Move model to GPU if available (unless FORCE_CPU=1)
+        if use_cuda():
             model = model.cuda()
             logger.info(f"Model loaded on GPU: {torch.cuda.get_device_name(0)}")
         else:
-            logger.warning("CUDA not available, running on CPU (will be slow)")
+            logger.warning("Running on CPU (will be slow)")
 
         return model
     except Exception as e:

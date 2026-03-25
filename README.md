@@ -47,7 +47,7 @@ The built-in UI at `/ui` is a single-page app for managing recordings, transcrip
 
 Prerequisites: [Docker](https://docs.docker.com/get-docker/), [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html) for GPU.
 
-**Pre-built image:** CI publishes **`ghcr.io/meganoob1337/noobscribe`** (tags such as `latest` on the default branch and semver on `v*` git tags). Compose uses that image by default so you can start without a local build:
+**Pre-built image:** CI publishes **`ghcr.io/meganoob1337/noobscribe`**: GPU builds use tag **`latest`** (amd64 only). The **CPU** image ([Dockerfile.cpu](Dockerfile.cpu)) is published as **`latest-cpu`** with **multi-arch** manifests (`linux/amd64` and `linux/arm64`); use it on CPU-only or ARM hosts. Semver tags also have a `-cpu` suffix for the CPU image. Compose uses the GHCR image by default so you can start without a local build:
 
 ```bash
 docker compose up -d
@@ -73,6 +73,13 @@ Copy **[env.example](env.example)** to `.env` and adjust values (Compose loads `
 See **[DOCKER_README.md](DOCKER_README.md)** for environment variables, **Traefik + TLS**, and manual `docker run` examples.
 
 **Traefik:** Use **[docker-compose.traefik.yaml](docker-compose.traefik.yaml)** with a pre-existing Traefik stack and external Docker network. Set `NOOBSCRIBE_HOST` and `TRAEFIK_NETWORK` in `.env` (see `env.example`). Full steps in **DOCKER_README.md**.
+
+### CPU-only (no GPU, no CUDA base image)
+
+- **Compose:** `docker compose -f docker-compose.cpu.yaml up -d` — uses **[docker-compose.cpu.yaml](docker-compose.cpu.yaml)** (default image **`ghcr.io/.../noobscribe:latest-cpu`**, **`FORCE_CPU=1`**, no GPU reservations).
+- Build image from **[Dockerfile.cpu](Dockerfile.cpu)** (uses [requirements.lock.txt](requirements.lock.txt) with CUDA-only pins stripped and CPU [PyTorch](https://pytorch.org/) wheels). The Dockerfile sets **`FORCE_CPU=1`** so inference stays on CPU.
+- Example: `docker build -f Dockerfile.cpu -t noobscribe:cpu .`
+- To force CPU on any deployment (including GPU images), set **`FORCE_CPU=1`** (or `true`/`yes`) in the environment. See **`GET /health`** for `force_cpu` and `cuda_available` in **[API_DOCUMENTATION.md](API_DOCUMENTATION.md)**.
 
 ## Local development (without Docker)
 
@@ -104,6 +111,7 @@ Set `HUGGINGFACE_ACCESS_TOKEN` if you use Hugging Face for diarization (or set `
 | `TEMP_DIR` | `/tmp/noobscribe` | Temp transcoding |
 | `CHUNK_DURATION` | `20` | Chunk length (seconds) for long files |
 | `SPEAKER_SIMILARITY_THRESHOLD` | `0.7` | Cosine similarity for speaker match |
+| `FORCE_CPU` | _(unset)_ | When `1`/`true`/`yes`, use CPU for ASR, diarization, and language ID even if CUDA is available; **Dockerfile.cpu** sets this by default |
 
 **Gated Pyannote models:** The **pyannote-audio** checkpoints used for diarization (including the default pipeline and any sub-models it pulls) are hosted on Hugging Face under **gated** repositories. Create a [Hugging Face access token](https://huggingface.co/settings/tokens), then visit each required model page while logged in and **accept the user conditions** (e.g. “Agree and access repository”). Until you do, `huggingface_hub` may return access errors even with a valid token.
 

@@ -1,0 +1,42 @@
+# CPU-only image: no NVIDIA CUDA base; PyTorch CPU wheels; CUDA pins stripped from lock file.
+FROM python:3.12-slim
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+# Application code respects this so models stay on CPU even if a GPU is visible.
+ENV FORCE_CPU=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg \
+    git \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY requirements.lock.txt .
+
+# Drop CUDA/NVIDIA-only pins and torch stack (installed from PyTorch CPU index below).
+# Keeps nemo-toolkit / nemo_* and nv-one-logger-* (NeMo imports nv_one_logger at runtime).
+# Fix trailing unpinned `dotenv` line in lock file → python-dotenv.
+RUN grep -v -E '^(cuda-bindings|cuda-pathfinder|cuda-python|numba-cuda|triton|nvtx|pynvml|nerfacc|nvidia-|nvidia_lm_eval|torch==|torchaudio==|torchvision==)' requirements.lock.txt \
+    | sed 's/^dotenv$/python-dotenv/' \
+    > requirements.cpu.filtered.txt
+
+RUN python -m venv /app/venv
+ENV PATH="/app/venv/bin:$PATH"
+
+RUN pip install --upgrade pip
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install torch==2.8.0 torchaudio==2.8.0 torchvision==0.23.0 \
+    --index-url https://download.pytorch.org/whl/cpu
+
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install -r requirements.cpu.filtered.txt
+
+COPY . .
+
+EXPOSE 8000
+
+CMD ["/bin/bash", "-c", "exec /app/venv/bin/uvicorn main:app --host \"${HOST:-0.0.0.0}\" --port \"${PORT:-8000}\""]

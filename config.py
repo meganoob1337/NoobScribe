@@ -37,6 +37,20 @@ DEFAULT_NUM_SPEAKERS = None  # None means auto-detection
 DEFAULT_INCLUDE_DIARIZATION_IN_TEXT = True  # Whether to include speaker labels in the text
 
 
+def force_cpu_from_env() -> bool:
+    """True when FORCE_CPU is set (force CPU even if CUDA is available)."""
+    return os.environ.get("FORCE_CPU", "").lower() in ("1", "true", "yes")
+
+
+def use_cuda() -> bool:
+    """Use GPU for inference only when CUDA is available and FORCE_CPU is not set."""
+    if force_cpu_from_env():
+        return False
+    import torch
+
+    return torch.cuda.is_available()
+
+
 class Config:
     """Global configuration for NoobScribe"""
 
@@ -55,6 +69,7 @@ class Config:
         self.host = os.environ.get("HOST", DEFAULT_HOST)
         self.port = int(os.environ.get("PORT", DEFAULT_PORT))
         self.debug = DEBUG_MODE
+        self.force_cpu = force_cpu_from_env()
 
         # Model settings
         self.model_id = os.environ.get("MODEL_ID", DEFAULT_MODEL_ID)
@@ -111,6 +126,7 @@ class Config:
             "host": self.host,
             "port": self.port,
             "debug": self.debug,
+            "force_cpu": self.force_cpu,
             "model_id": self.model_id,
             "temperature": self.temperature,
             "chunk_duration": self.chunk_duration,

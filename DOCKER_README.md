@@ -13,7 +13,8 @@ GPU-backed Docker setup for **NoobScribe** (NeMo ASR + optional pyannote diariza
 The workflow **[.github/workflows/docker-publish.yml](.github/workflows/docker-publish.yml)** builds and pushes the API image to **GHCR** on pushes to the default branch (`main`), on version tags `v*`, and on manual **workflow_dispatch**. Pull requests run a build only (no push).
 
 - **Package:** `ghcr.io/meganoob1337/noobscribe` (GitHub lowercases the repository name; the GitHub repo is **NoobScribe**).
-- **Tags:** `latest` tracks the default branch; git tags like `v1.2.3` produce semver tags; each push also gets a short **SHA** tag.
+- **Tags (GPU image, [Dockerfile](Dockerfile), `linux/amd64` only):** `latest` tracks the default branch; git tags like `v1.2.3` produce semver tags; each push also gets a short **SHA** tag.
+- **Tags (CPU image, [Dockerfile.cpu](Dockerfile.cpu), **multi-arch** `linux/amd64` + `linux/arm64`):** `latest-cpu`, semver tags with a `-cpu` suffix (e.g. `1.2.3-cpu`), and SHA tags with a `-cpu` suffix (e.g. `abc1234-cpu`). Use **`latest-cpu`** (or a pinned `-cpu` tag) on machines without an NVIDIA GPU or on ARM64 hosts.
 
 Compose sets **`image`** to that registry image and keeps **`build: .`** so you can still build locally. Override the image with **`NOOBSCRIBE_IMAGE`** in `.env` (see **[env.example](env.example)**) — useful for forks (`ghcr.io/<your-user>/<your-repo>:<tag>`) or pinning a specific tag.
 
@@ -38,6 +39,12 @@ Local build from the Dockerfile:
 ```bash
 docker compose build
 docker compose up -d
+```
+
+**CPU-only (no NVIDIA GPU):** use **[docker-compose.cpu.yaml](docker-compose.cpu.yaml)** — default image **`latest-cpu`** (multi-arch), **`Dockerfile.cpu`** for local builds, **`FORCE_CPU=1`**, no GPU device reservations.
+
+```bash
+docker compose -f docker-compose.cpu.yaml up -d
 ```
 
 Stop:

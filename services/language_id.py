@@ -10,7 +10,7 @@ import os
 import threading
 from typing import Any, Optional
 
-import torch
+from config import use_cuda
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +56,7 @@ def _get_classifier(config: Any) -> Any:
         except ImportError:
             logger.warning("speechbrain is not installed; language auto-detection is disabled")
             return None
-        device = "cuda" if torch.cuda.is_available() else "cpu"
+        device = "cuda" if use_cuda() else "cpu"
         savedir = getattr(config, "language_id_savedir", None) or os.path.join(
             getattr(config, "temp_dir", "/tmp/noobscribe"), "speechbrain_lang_id"
         )

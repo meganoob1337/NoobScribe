@@ -224,6 +224,7 @@ Check the health status of the API and the loaded model.
   "version": "1.0.0",
   "model_loaded": true,
   "model_id": "nvidia/canary-1b-v2",
+  "force_cpu": false,
   "cuda_available": true,
   "gpu_info": "NVIDIA GeForce RTX 3090",
   "config": {
@@ -236,7 +237,8 @@ Check the health status of the API and the loaded model.
     "recordings_path": "./data/recordings",
     "database_url": "sqlite+aiosqlite:///./data/noobscribe.db",
     "speaker_similarity_threshold": 0.7,
-    "include_diarization_in_text": true
+    "include_diarization_in_text": true,
+    "force_cpu": false
   }
 }
 ```
@@ -246,9 +248,10 @@ Check the health status of the API and the loaded model.
 - `version` (string): API version
 - `model_loaded` (boolean): Whether the ASR model is loaded and ready
 - `model_id` (string): Identifier of the loaded model
-- `cuda_available` (boolean): Whether CUDA/GPU is available
-- `gpu_info` (string, optional): GPU name if CUDA is available, `null` otherwise
-- `config` (object): Current server configuration
+- `force_cpu` (boolean): Whether `FORCE_CPU` is set, forcing CPU inference even if a GPU is present
+- `cuda_available` (boolean): Whether the server will use CUDA/GPU for inference (false when `force_cpu` is true or no GPU is available)
+- `gpu_info` (string, optional): GPU name if CUDA is used for inference, `null` otherwise
+- `config` (object): Current server configuration (includes `force_cpu`)
 
 #### Example Request
 

@@ -18,7 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.responses import Response
 
 from audio import convert_audio_to_wav, cut_audio_segment, get_wav_duration_seconds
-from config import get_config
+from config import get_config, use_cuda
 from database.db import get_session, init_db, init_engine
 from database.models import Recording as RecordingORM
 from database.speakers import SpeakerDB
@@ -97,10 +97,10 @@ def create_app() -> FastAPI:
         logger.info("SQLite database initialized")
 
         try:
-            if torch.cuda.is_available():
+            if use_cuda():
                 logger.info("CUDA available: %s", torch.cuda.get_device_name(0))
             else:
-                logger.warning("CUDA not available, using CPU (this will be slow)")
+                logger.warning("Using CPU for inference (this will be slow)")
 
             model_id = config.model_id
             asr_model = load_model(model_id, model_path=config.model_path)
@@ -264,8 +264,9 @@ def create_app() -> FastAPI:
             "version": "1.0.0",
             "model_loaded": asr_model is not None,
             "model_id": config.model_id,
-            "cuda_available": torch.cuda.is_available(),
-            "gpu_info": torch.cuda.get_device_name(0) if torch.cuda.is_available() else None,
+            "force_cpu": config.force_cpu,
+            "cuda_available": use_cuda(),
+            "gpu_info": torch.cuda.get_device_name(0) if use_cuda() else None,
             "config": config.as_dict(),
         }
 

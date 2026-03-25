@@ -12,6 +12,8 @@ import numpy as np
 import torch
 from pydantic import BaseModel
 
+from config import use_cuda
+
 logger = logging.getLogger(__name__)
 
 class SpeakerSegment(BaseModel):
@@ -36,7 +38,7 @@ class Diarizer:
         self.pipeline = None
         self.access_token = access_token
         self.model_path = model_path
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.device = "cuda" if use_cuda() else "cpu"
         self._initialize()
 
     def _initialize(self):

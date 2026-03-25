@@ -4,7 +4,6 @@
 import os
 import logging
 import uvicorn
-import torch
 
 # Set up logging
 logging.basicConfig(
@@ -21,7 +20,7 @@ if os.environ.get('DEBUG', '0') == '1':
 
 # Import from modularized components
 from api import create_app
-from config import get_config
+from config import get_config, use_cuda
 
 # Get the configuration
 config = get_config()
@@ -39,10 +38,12 @@ from models import WhisperSegment, TranscriptionResponse
 if __name__ == "__main__":
     # Log startup information
     logger.info(f"Starting NoobScribe API on {config.host}:{config.port}")
-    if torch.cuda.is_available():
-        logger.info(f"CUDA available: {torch.cuda.get_device_name(0)}")
+    if use_cuda():
+        import torch
+
+        logger.info("CUDA available: %s", torch.cuda.get_device_name(0))
     else:
-        logger.warning("CUDA not available, using CPU (this will be slow)")
+        logger.warning("Using CPU for inference (this will be slow)")
     
     # Start the server
     uvicorn.run(app, host=config.host, port=config.port, reload=config.debug)
