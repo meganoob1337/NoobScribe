@@ -82,7 +82,7 @@ source venv/bin/activate   # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-Set `HUGGINGFACE_ACCESS_TOKEN` if you use Hugging Face for diarization (or set `DIARIZATION_MODEL_PATH` for offline pyannote).
+Set `HUGGINGFACE_ACCESS_TOKEN` if you use Hugging Face for diarization (or set `DIARIZATION_MODEL_PATH` for offline pyannote). **Pyannote-audio** models on Hugging Face are **gated**: sign in, open each model card you need (for example the default [speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1) pipeline), and **accept the access terms** on the card before downloads will succeed with your token.
 
 ```bash
 ./run.sh --hf-token "your_token"    # optional
@@ -97,13 +97,15 @@ Set `HUGGINGFACE_ACCESS_TOKEN` if you use Hugging Face for diarization (or set `
 | `MODEL_ID` | `nvidia/canary-1b-v2` | [Canary](https://huggingface.co/nvidia/canary-1b-v2) / [NeMo](https://github.com/NVIDIA/NeMo) from Hugging Face |
 | `MODEL_PATH` | _(unset)_ | Local [NeMo](https://github.com/NVIDIA/NeMo) `.nemo` checkpoint (offline ASR) |
 | `DIARIZATION_MODEL_PATH` | _(unset)_ | Local [Pyannote](https://github.com/pyannote/pyannote-audio) pipeline dir |
-| `HUGGINGFACE_ACCESS_TOKEN` | _(unset)_ | For [pyannote/speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1) when not offline |
+| `HUGGINGFACE_ACCESS_TOKEN` | _(unset)_ | For [pyannote/speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1) when not offline; Pyannote models are **gated** on Hugging Face — you must accept the terms on each model card (see note below) |
 | `DATABASE_URL` | `sqlite+aiosqlite:///./data/noobscribe.db` | Recordings metadata |
 | `CHROMADB_PATH` | `./data/speakers` | [Chroma](https://www.trychroma.com/) speaker embedding store |
 | `RECORDINGS_PATH` | `./data/recordings` | Uploaded audio |
 | `TEMP_DIR` | `/tmp/noobscribe` | Temp transcoding |
 | `CHUNK_DURATION` | `20` | Chunk length (seconds) for long files |
 | `SPEAKER_SIMILARITY_THRESHOLD` | `0.7` | Cosine similarity for speaker match |
+
+**Gated Pyannote models:** The **pyannote-audio** checkpoints used for diarization (including the default pipeline and any sub-models it pulls) are hosted on Hugging Face under **gated** repositories. Create a [Hugging Face access token](https://huggingface.co/settings/tokens), then visit each required model page while logged in and **accept the user conditions** (e.g. “Agree and access repository”). Until you do, `huggingface_hub` may return access errors even with a valid token.
 
 ## Testing
 
