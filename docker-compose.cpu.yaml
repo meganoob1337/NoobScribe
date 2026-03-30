@@ -1,16 +1,18 @@
 # CPU-only Compose: no NVIDIA GPU; builds from Dockerfile.cpu or pulls ghcr.io ... :latest-cpu.
 # Usage: docker compose -f docker-compose.cpu.yaml up -d
 #        docker compose -f docker-compose.cpu.yaml build
-# Pre-built multi-arch image (amd64 + arm64): override NOOBSCRIBE_IMAGE if needed. See DOCKER_README.md.
+# Pre-built image is linux/amd64 only. On ARM hosts Docker runs it via emulation when platform is set (below).
+# Override NOOBSCRIBE_IMAGE if needed. See DOCKER_README.md.
 services:
   noobscribe-api:
     image: ${NOOBSCRIBE_IMAGE:-ghcr.io/meganoob1337/noobscribe:latest-cpu}
+    platform: linux/amd64
     build:
       context: .
       dockerfile: Dockerfile.cpu
     container_name: noobscribe-api
     ports:
-      - "8000:8000"
+      - "9765:8000"
     environment:
       - HOST=0.0.0.0
       - PORT=8000

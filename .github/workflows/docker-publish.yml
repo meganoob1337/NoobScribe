@@ -1,29 +1,28 @@
 # Build and push the NoobScribe API image to GitHub Container Registry (GHCR).
-# Image: ghcr.io/<owner>/<repo> (lowercase), tags: latest on default branch, semver on v* tags, short SHA.
+# Image: ghcr.io/<owner>/<repo> (lowercase). Tags: latest on default branch; full semver on v* tags only.
 #
-# - GPU image (Dockerfile): linux/amd64 — tags: latest, semver, sha
-# - CPU image (Dockerfile.cpu): linux/amd64 + linux/arm64 — tags: latest-cpu, semver + -cpu, sha + -cpu
+# - GPU image (Dockerfile): linux/amd64 — tags: latest, {{version}}
+# - CPU image (Dockerfile.cpu): linux/amd64 only — tags: latest-cpu, {{version}}-cpu
+#
+# Runs on push to main, version tags (v*), and workflow_dispatch only — not on pull requests.
 name: Publish Docker image
 
 on:
   push:
     branches: [main]
     tags: ["v*"]
-  pull_request:
-    branches: [main]
   workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
 
 jobs:
-  build-and-push:
+  gpu:
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 120
     permissions:
       contents: read
       packages: write
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -32,14 +31,10 @@ jobs:
         id: image
         run: echo "name=${REGISTRY}/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to GHCR
-        if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
@@ -53,9 +48,7 @@ jobs:
           images: ${{ steps.image.outputs.name }}
           tags: |
             type=raw,value=latest,enable=${{ github.ref_name == github.event.repository.default_branch }}
-            type=sha,prefix=
             type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
 
       - name: Build and push GPU image (linux/amd64)
         uses: docker/build-push-action@v6
@@ -63,11 +56,35 @@ jobs:
           context: .
           file: Dockerfile
           platforms: linux/amd64
-          push: ${{ github.event_name != 'pull_request' }}
+          push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=gpu
           cache-to: type=gha,mode=max,scope=gpu
+
+  cpu:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Lowercase image name (GHCR requires lowercase)
+        id: image
+        run: echo "name=${REGISTRY}/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Docker metadata (CPU / Dockerfile.cpu)
         id: meta-cpu
@@ -79,17 +96,15 @@ jobs:
             suffix=-cpu
           tags: |
             type=raw,value=latest,enable=${{ github.ref_name == github.event.repository.default_branch }}
-            type=sha,prefix=
             type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
 
-      - name: Build and push CPU image (linux/amd64, linux/arm64)
+      - name: Build and push CPU image (linux/amd64)
         uses: docker/build-push-action@v6
         with:
           context: .
           file: Dockerfile.cpu
-          platforms: linux/amd64,linux/arm64
-          push: ${{ github.event_name != 'pull_request' }}
+          platforms: linux/amd64
+          push: true
           tags: ${{ steps.meta-cpu.outputs.tags }}
           labels: ${{ steps.meta-cpu.outputs.labels }}
           cache-from: type=gha,scope=cpu
