@@ -10,7 +10,7 @@ GPU-backed Docker setup for **NoobScribe** (NeMo ASR + optional pyannote diariza
 
 ## Pre-built image (GitHub Container Registry)
 
-The workflow **[.github/workflows/docker-publish.yml](.github/workflows/docker-publish.yml)** builds and pushes the API image to **GHCR** on pushes to the default branch (`main`), on version tags `v*`, and on manual **workflow_dispatch**. Pull requests run a build only (no push).
+The workflow **[.github/workflows/docker-publish.yml](.github/workflows/docker-publish.yml)** builds and pushes **GPU** and **CPU** images to **GHCR** in **parallel** (two jobs) on pushes to the default branch (`main`), on version tags `v*`, and on manual **workflow_dispatch**. Pull requests run both builds only (no push).
 
 - **Package:** `ghcr.io/meganoob1337/noobscribe` (GitHub lowercases the repository name; the GitHub repo is **NoobScribe**).
 - **Tags (GPU image, [Dockerfile](Dockerfile), `linux/amd64` only):** `latest` tracks the default branch; git tags like `v1.2.3` produce semver tags; each push also gets a short **SHA** tag.

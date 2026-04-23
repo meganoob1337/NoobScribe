@@ -7,10 +7,17 @@ ENV PYTHONDONTWRITEBYTECODE=1
 # Application code respects this so models stay on CPU even if a GPU is visible.
 ENV FORCE_CPU=1
 
+# build-essential + cmake/zlib: numcodecs (zarr stack) when no prebuilt wheel matches the platform.
+# libfst-dev: pynini (NeMo text processing) links against OpenFST at build time.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     git \
     build-essential \
+    cmake \
+    pkg-config \
+    zlib1g-dev \
+    libfst-dev \
+    python3-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -20,7 +27,7 @@ COPY requirements.lock.txt .
 # Drop CUDA/NVIDIA-only pins and torch stack (installed from PyTorch CPU index below).
 # Keeps nemo-toolkit / nemo_* and nv-one-logger-* (NeMo imports nv_one_logger at runtime).
 # Fix trailing unpinned `dotenv` line in lock file → python-dotenv.
-RUN grep -v -E '^(cuda-bindings|cuda-pathfinder|cuda-python|numba-cuda|triton|nvtx|pynvml|nerfacc|nvidia-|nvidia_lm_eval|torch==|torchaudio==|torchvision==)' requirements.lock.txt \
+RUN grep -v -E '^(cuda-bindings|cuda-pathfinder|cuda-python|numba-cuda|triton|nvtx|pynvml|nerfacc|nvidia-|nvidia_lm_eval|torch==|torchaudio==|torchvision==|decord)' requirements.lock.txt \
     | sed 's/^dotenv$/python-dotenv/' \
     > requirements.cpu.filtered.txt
 

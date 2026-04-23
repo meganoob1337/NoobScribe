@@ -51,7 +51,6 @@ cytoolz==1.0.1
 DataProperty==1.1.0
 datasets==4.1.1
 decorator==5.2.1
-decord==0.6.0
 defusedxml==0.7.1
 Deprecated==1.2.18
 diffusers==0.35.1
