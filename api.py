@@ -103,8 +103,16 @@ def create_app() -> FastAPI:
                 logger.warning("Using CPU for inference (this will be slow)")
 
             model_id = config.model_id
-            asr_model = load_model(model_id, model_path=config.model_path)
-            logger.info("ASR model loaded (%s)", config.model_path or model_id)
+            if getattr(config, "use_api", False):
+                asr_model = None
+                logger.info(
+                    "Using remote STT API at %s (model=%s)",
+                    config.stt_base_url,
+                    model_id,
+                )
+            else:
+                asr_model = load_model(model_id, model_path=config.model_path)
+                logger.info("ASR model loaded (%s)", config.model_path or model_id)
 
             try:
                 speaker_db = SpeakerDB(
@@ -168,7 +176,8 @@ def create_app() -> FastAPI:
         include_diarization_in_text: Optional[bool] = Form(None),
     ):
         """
-        Transcribe audio using NVIDIA NeMo ASR (default: Canary 1B v2).
+        Transcribe audio using local NVIDIA NeMo ASR (default: Canary 1B v2) or,
+        when ``USE_API`` is set, a remote OpenAI-compatible Whisper transcription API.
 
         This endpoint is compatible with the OpenAI Whisper API.
         """
@@ -176,7 +185,7 @@ def create_app() -> FastAPI:
 
         global asr_model
 
-        if not asr_model:
+        if not asr_model and not getattr(config, "use_api", False):
             raise HTTPException(
                 status_code=503,
                 detail="Model not loaded yet. Please try again in a few moments.",
@@ -262,7 +271,7 @@ def create_app() -> FastAPI:
         return {
             "status": "ok",
             "version": "1.0.0",
-            "model_loaded": asr_model is not None,
+            "model_loaded": asr_model is not None or getattr(config, "use_api", False),
             "model_id": config.model_id,
             "force_cpu": config.force_cpu,
             "cuda_available": use_cuda(),
@@ -349,13 +358,12 @@ def create_app() -> FastAPI:
         _ = temperature
         global asr_model, speaker_db
 
-        if asr_model is None:
+        cfg = get_config()
+        if asr_model is None and not getattr(cfg, "use_api", False):
             raise HTTPException(
                 status_code=503,
                 detail="Model not loaded yet. Please try again in a few moments.",
             )
-
-        cfg = get_config()
         rid = str(uuid.uuid4())
         suffix = Path(file.filename or "audio").suffix or ".bin"
         dest = Path(cfg.recordings_path) / f"{rid}{suffix}"

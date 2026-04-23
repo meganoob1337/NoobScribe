@@ -73,7 +73,8 @@ router = APIRouter(prefix="/recordings", tags=["recordings"])
 def _require_asr_model():
     import api as api_module
 
-    if api_module.asr_model is None:
+    cfg = get_config()
+    if api_module.asr_model is None and not getattr(cfg, "use_api", False):
         raise HTTPException(status_code=503, detail="Model not loaded yet. Please try again in a few moments.")
     return api_module.asr_model
 

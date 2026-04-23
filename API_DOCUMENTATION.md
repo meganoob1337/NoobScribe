@@ -19,7 +19,7 @@ Currently, the API does not require authentication.
 
 ### 1. Transcribe Audio
 
-Transcribe an audio file using the NVIDIA NeMo ASR (default: Canary 1B v2) with optional speaker diarization.
+Transcribe an audio file with optional speaker diarization. **ASR backend:** by default this uses **local NVIDIA NeMo** (default: Canary 1B v2). When the server is configured with **`USE_API=1`**, each audio chunk is sent to a **remote OpenAI-compatible** `POST …/audio/transcriptions` endpoint (`STT_BASE_URL` + `STT_API_KEY`); **`MODEL_ID`** is passed as the remote `model` name. Diarization, language ID, and merging behavior are unchanged in both modes.
 
 **Endpoint:** `POST /v1/audio/transcriptions`
 
@@ -30,7 +30,7 @@ Transcribe an audio file using the NVIDIA NeMo ASR (default: Canary 1B v2) with 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
 | `file` | File | Yes | - | The audio file to transcribe (supports common audio formats: wav, mp3, m4a, flac, etc.) |
-| `model` | string | No | `"whisper-1"` | Model identifier (accepted for compatibility; server uses configured NeMo ASR, default `nvidia/canary-1b-v2`) |
+| `model` | string | No | `"whisper-1"` | Model identifier (accepted for compatibility). **Local mode:** server uses configured NeMo ASR (`MODEL_ID` / `MODEL_PATH`). **API mode (`USE_API`):** the form field is still accepted; the server uses **`MODEL_ID`** as the remote transcription `model` parameter. |
 | `language` | string | No | `null` | Language code of the audio (e.g., "en", "de", "fr"). If omitted or blank, the service runs [SpeechBrain VoxLingua107 ECAPA](https://huggingface.co/speechbrain/lang-id-voxlingua107-ecapa) on the first portion of the audio (see `LANGUAGE_ID_MAX_AUDIO_SECONDS`) and passes that code as both NeMo `source_lang` and `target_lang`. If identification is disabled or fails, both are left unset (previous behavior). Set `DISABLE_LANGUAGE_ID=1` to skip detection. |
 | `prompt` | string | No | `null` | Optional prompt to guide the transcription (accepted for compatibility but currently ignored) |
 | `response_format` | string | No | `"json"` | Format of the response. Options: `"json"`, `"text"`, `"srt"`, `"vtt"`, `"verbose_json"` |
@@ -246,12 +246,12 @@ Check the health status of the API and the loaded model.
 **Response Fields:**
 - `status` (string): Always "ok" if the API is running
 - `version` (string): API version
-- `model_loaded` (boolean): Whether the ASR model is loaded and ready
-- `model_id` (string): Identifier of the loaded model
+- `model_loaded` (boolean): Whether transcription is ready: **true** if the local NeMo ASR is loaded **or** if **`USE_API`** is enabled (remote STT; no local ASR weights). **false** only when local ASR failed to load and API mode is off.
+- `model_id` (string): Configured **`MODEL_ID`** (NeMo id in local mode; remote `model` name in API mode)
 - `force_cpu` (boolean): Whether `FORCE_CPU` is set, forcing CPU inference even if a GPU is present
 - `cuda_available` (boolean): Whether the server will use CUDA/GPU for inference (false when `force_cpu` is true or no GPU is available)
 - `gpu_info` (string, optional): GPU name if CUDA is used for inference, `null` otherwise
-- `config` (object): Current server configuration (includes `force_cpu`)
+- `config` (object): Current server configuration (includes `force_cpu`, `use_api`, `stt_base_url`, `has_stt_api_key`)
 
 #### Example Request
 
@@ -877,6 +877,10 @@ Other useful paths:
 | `LANGUAGE_ID_SAVEDIR` | `{TEMP_DIR}/speechbrain_lang_id` | Download/cache directory for the language-ID model |
 | `LANGUAGE_ID_MAX_AUDIO_SECONDS` | `30` | Seconds of audio (from the start) used for identification |
 | `DISABLE_LANGUAGE_ID` | unset | If `1` / `true` / `yes`, skip language ID; NeMo `source_lang` / `target_lang` stay unset when no `language` is sent |
+| `USE_API` | unset | If `1` / `true` / `yes`, use remote OpenAI-compatible STT instead of loading NeMo locally. Requires **`STT_BASE_URL`** and **`STT_API_KEY`**. |
+| `STT_BASE_URL` | _(unset)_ | OpenAI-compatible API base URL (e.g. `https://api.openai.com/v1`). Required when `USE_API` is set. |
+| `STT_API_KEY` | _(unset)_ | Bearer token for the STT API. Required when `USE_API` is set. |
+| `MODEL_ID` | `nvidia/canary-1b-v2` | In **API mode**, reused as the remote **`model`** name (e.g. `whisper-1`). |
 
 ---
 
