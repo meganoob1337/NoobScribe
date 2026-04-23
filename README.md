@@ -101,7 +101,10 @@ Set `HUGGINGFACE_ACCESS_TOKEN` if you use Hugging Face for diarization (or set `
 
 | Variable | Default | Notes |
 |----------|---------|--------|
-| `MODEL_ID` | `nvidia/canary-1b-v2` | [Canary](https://huggingface.co/nvidia/canary-1b-v2) / [NeMo](https://github.com/NVIDIA/NeMo) from Hugging Face |
+| `USE_API` | _(unset)_ | Set to `1` / `true` / `yes` to transcribe via a **remote OpenAI-compatible Whisper API** instead of local NeMo. Requires **`STT_BASE_URL`** and **`STT_API_KEY`**. **Diarization still runs locally** (pyannote / `DIARIZATION_MODEL_PATH`); you still need `HUGGINGFACE_ACCESS_TOKEN` or an offline diarization path when diarization is enabled. |
+| `STT_BASE_URL` | _(unset)_ | Base URL for the remote STT service (e.g. `https://api.openai.com/v1`). Required when `USE_API` is set. |
+| `STT_API_KEY` | _(unset)_ | API key for the remote STT service. Required when `USE_API` is set. |
+| `MODEL_ID` | `nvidia/canary-1b-v2` | **Local mode:** [Canary](https://huggingface.co/nvidia/canary-1b-v2) / [NeMo](https://github.com/NVIDIA/NeMo) from Hugging Face. **API mode:** passed to the remote API as the `model` name (e.g. `whisper-1`). |
 | `MODEL_PATH` | _(unset)_ | Local [NeMo](https://github.com/NVIDIA/NeMo) `.nemo` checkpoint (offline ASR) |
 | `DIARIZATION_MODEL_PATH` | _(unset)_ | Local [Pyannote](https://github.com/pyannote/pyannote-audio) pipeline dir |
 | `HUGGINGFACE_ACCESS_TOKEN` | _(unset)_ | For [pyannote/speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1) when not offline; Pyannote models are **gated** on Hugging Face — you must accept the terms on each model card (see note below) |
