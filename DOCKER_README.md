@@ -74,7 +74,10 @@ Pinned dependencies for the image are in **`requirements.lock.txt`** (installed 
 | `DEBUG` | `0` or `1` |
 | `ENABLE_DIARIZATION` | `true` / `false` |
 | `INCLUDE_DIARIZATION_IN_TEXT` | `true` / `false` |
-| `MODEL_ID` | NeMo model id (default `nvidia/canary-1b-v2`) |
+| `USE_API` | `1` / `true` / `yes` to use remote OpenAI-compatible STT instead of local NeMo (requires `STT_BASE_URL`, `STT_API_KEY`) |
+| `STT_BASE_URL` | OpenAI-compatible API base URL (e.g. `https://api.openai.com/v1`) |
+| `STT_API_KEY` | Bearer token for the STT API |
+| `MODEL_ID` | NeMo model id when local (default `nvidia/canary-1b-v2`); remote `model` name when `USE_API` is set (e.g. `whisper-1`) |
 | `MODEL_PATH` | Local NeMo `.nemo` (offline ASR) |
 | `DIARIZATION_MODEL_PATH` | Local pyannote pipeline directory |
 | `TEMPERATURE` | Sampling temperature |

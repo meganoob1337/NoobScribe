@@ -12,6 +12,7 @@ from typing import Any, List, Optional
 from models import SpeakerInfo, TranscriptionResponse, WhisperSegment
 from audio import split_audio_into_chunks
 from transcription import transcribe_audio_chunk
+from services.stt_api_client import transcribe_api_chunk
 from diarization import Diarizer
 from services.language_id import resolve_transcription_language
 
@@ -91,12 +92,20 @@ def run_transcription_pipeline(
 
     for i, chunk_path in enumerate(audio_chunks):
         logger.info("Processing chunk %s/%s", i + 1, len(audio_chunks))
-        chunk_text, chunk_segments = transcribe_audio_chunk(
-            asr_model,
-            chunk_path,
-            language=effective_language,
-            word_timestamps=word_timestamps,
-        )
+        if getattr(config, "use_api", False):
+            chunk_text, chunk_segments = transcribe_api_chunk(
+                chunk_path,
+                config.model_id,
+                config,
+                language=effective_language,
+            )
+        else:
+            chunk_text, chunk_segments = transcribe_audio_chunk(
+                asr_model,
+                chunk_path,
+                language=effective_language,
+                word_timestamps=word_timestamps,
+            )
         if i > 0:
             offset = i * chunk_duration
             for segment in chunk_segments:

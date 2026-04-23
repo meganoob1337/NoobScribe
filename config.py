@@ -109,6 +109,20 @@ class Config:
         Path(self.language_id_savedir).mkdir(parents=True, exist_ok=True)
         self.language_id_max_audio_seconds = int(os.environ.get("LANGUAGE_ID_MAX_AUDIO_SECONDS", "30"))
 
+        # OpenAI-compatible remote STT (Whisper API) — optional alternative to local NeMo
+        self.use_api = os.environ.get("USE_API", "").lower() in ("1", "true", "yes")
+        self.stt_base_url = os.environ.get("STT_BASE_URL", "").strip() or None
+        self.stt_api_key = os.environ.get("STT_API_KEY", "").strip() or None
+        if self.use_api:
+            if not self.stt_base_url:
+                raise ValueError(
+                    "USE_API is set but STT_BASE_URL is missing. Set STT_BASE_URL to the OpenAI-compatible base URL (e.g. https://api.openai.com/v1)."
+                )
+            if not self.stt_api_key:
+                raise ValueError(
+                    "USE_API is set but STT_API_KEY is missing. Set STT_API_KEY to your API bearer token."
+                )
+
         logger.debug(f"Initialized configuration: debug={self.debug}, model={self.model_id}")
 
     def update_hf_token(self, token: str) -> None:
@@ -143,6 +157,9 @@ class Config:
             "language_id_model_id": self.language_id_model_id,
             "language_id_savedir": self.language_id_savedir,
             "language_id_max_audio_seconds": self.language_id_max_audio_seconds,
+            "use_api": self.use_api,
+            "stt_base_url": self.stt_base_url,
+            "has_stt_api_key": bool(self.stt_api_key),
         }
 
 
