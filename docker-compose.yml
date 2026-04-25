@@ -1,15 +1,92 @@
-# Default Docker Compose: local GPU, port 8000. See DOCKER_README.md.
-# Pre-built image from GHCR (override with NOOBSCRIBE_IMAGE); keep `build: .` for local builds.
+# =============================================================================
+# NoobScribe Compose profiles
+# =============================================================================
+# Default profile (`COMPOSE_PROFILES=traefik`):
+#   - GPU + Traefik (no host port publish)
+#
+# Optional modes:
+#   - --profile cpu                => CPU + Traefik
+#   - --profile no-traefik         => GPU + direct host port publish
+#   - --profile cpu-no-traefik     => CPU + direct host port publish
+# =============================================================================
+
+x-noobscribe-common: &noobscribe-common
+  environment:
+    - HOST=0.0.0.0
+    - PORT=8000
+    - DEBUG=${DEBUG:-0}
+    - ENABLE_DIARIZATION=${ENABLE_DIARIZATION:-true}
+    - INCLUDE_DIARIZATION_IN_TEXT=${INCLUDE_DIARIZATION_IN_TEXT:-true}
+    - USE_API=${USE_API:-0}
+    - STT_BASE_URL=${STT_BASE_URL:-}
+    - STT_API_KEY=${STT_API_KEY:-}
+    - MODEL_ID=${MODEL_ID:-nvidia/canary-1b-v2}
+    - MODEL_PATH=${MODEL_PATH:-}
+    - DIARIZATION_MODEL_PATH=${DIARIZATION_MODEL_PATH:-}
+    - TEMPERATURE=${TEMPERATURE:-0.0}
+    - CHUNK_DURATION=${CHUNK_DURATION:-10}
+    - HUGGINGFACE_ACCESS_TOKEN=${HUGGINGFACE_TOKEN:-}
+    - CHROMADB_PATH=/app/data/speakers
+    - RECORDINGS_PATH=/app/data/recordings
+    - DATABASE_URL=sqlite+aiosqlite:////app/data/noobscribe.db
+  volumes:
+    - ./huggingface:/root/.cache/huggingface
+    - ./data:/app/data
+  restart: unless-stopped
+
+x-traefik-labels: &traefik-labels
+  - "traefik.enable=true"
+  - "traefik.docker.network=${TRAEFIK_NETWORK:-traefik-global-proxy}"
+  - "traefik.http.routers.noobscribe-api.rule=Host(`${NOOBSCRIBE_HOST:-noobscribe.localhost}`)"
+  - "traefik.http.services.noobscribe-api.loadbalancer.server.port=8000"
+  - "traefik.http.routers.noobscribe-api.entrypoints=${TRAEFIK_ENTRYPOINT:-websecure}"
+  - "traefik.http.routers.noobscribe-api.tls.certresolver=${TRAEFIK_CERT_RESOLVER:-letsencrypt}"
+  - "traefik.http.routers.noobscribe-api.middlewares=noobscribe-api-headers"
+  - "traefik.http.middlewares.noobscribe-api-headers.headers.customresponseheaders.Access-Control-Allow-Origin=*"
+  - "traefik.http.middlewares.noobscribe-api-headers.headers.customresponseheaders.Access-Control-Allow-Methods=GET,POST,PUT,DELETE,OPTIONS"
+  - "traefik.http.middlewares.noobscribe-api-headers.headers.customresponseheaders.Access-Control-Allow-Headers=Content-Type,Authorization"
+  - "traefik.http.middlewares.noobscribe-api-headers.headers.customresponseheaders.X-Content-Type-Options=nosniff"
+  - "traefik.http.middlewares.noobscribe-api-headers.headers.customresponseheaders.X-Frame-Options=DENY"
+  - "traefik.http.middlewares.noobscribe-api-headers.headers.customresponseheaders.X-XSS-Protection=1; mode=block"
+  - "traefik.http.middlewares.noobscribe-api-headers.headers.sslredirect=true"
+  - "traefik.http.middlewares.noobscribe-api-headers.headers.stsincludeSubdomains=true"
+  - "traefik.http.middlewares.noobscribe-api-headers.headers.stspreload=true"
+  - "traefik.http.middlewares.noobscribe-api-headers.headers.stsseconds=31536000"
+  - "traefik.http.routers.noobscribe-api.tls=true"
+
 services:
   noobscribe-api:
+    <<: *noobscribe-common
+    profiles: ["traefik"]
     image: ${NOOBSCRIBE_IMAGE:-ghcr.io/meganoob1337/noobscribe:latest}
     build: .
     container_name: noobscribe-api
-    ports:
-      - "8000:8000"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids:
+                - ${GPU_DEVICE_ID:-0}
+              capabilities: [gpu]
+    networks:
+      - default
+      - traefik-global-proxy
+    labels: *traefik-labels
+
+  noobscribe-api-cpu:
+    <<: *noobscribe-common
+    profiles: ["cpu"]
+    image: ${NOOBSCRIBE_IMAGE:-ghcr.io/meganoob1337/noobscribe:latest-cpu}
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: Dockerfile.cpu
+    container_name: noobscribe-api-cpu
     environment:
       - HOST=0.0.0.0
       - PORT=8000
+      - FORCE_CPU=${FORCE_CPU:-1}
       - DEBUG=${DEBUG:-0}
       - ENABLE_DIARIZATION=${ENABLE_DIARIZATION:-true}
       - INCLUDE_DIARIZATION_IN_TEXT=${INCLUDE_DIARIZATION_IN_TEXT:-true}
@@ -25,16 +102,60 @@ services:
       - CHROMADB_PATH=/app/data/speakers
       - RECORDINGS_PATH=/app/data/recordings
       - DATABASE_URL=sqlite+aiosqlite:////app/data/noobscribe.db
-    volumes:
-      - ./huggingface:/root/.cache/huggingface
-      - ./data:/app/data
-  # Comment out if you want to use cpu only
+    networks:
+      - default
+      - traefik-global-proxy
+    labels: *traefik-labels
+
+  noobscribe-api-no-traefik:
+    <<: *noobscribe-common
+    profiles: ["no-traefik"]
+    image: ${NOOBSCRIBE_IMAGE:-ghcr.io/meganoob1337/noobscribe:latest}
+    build: .
+    container_name: noobscribe-api-no-traefik
+    ports:
+      - "${NOOBSCRIBE_PUBLISH_PORT:-8000:8000}"
     deploy:
       resources:
         reservations:
           devices:
             - driver: nvidia
               device_ids:
-                 - ${GPU_DEVICE_ID:-0}
+                - ${GPU_DEVICE_ID:-0}
               capabilities: [gpu]
-    restart: unless-stopped
+
+  noobscribe-api-cpu-no-traefik:
+    <<: *noobscribe-common
+    profiles: ["cpu-no-traefik"]
+    image: ${NOOBSCRIBE_IMAGE:-ghcr.io/meganoob1337/noobscribe:latest-cpu}
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: Dockerfile.cpu
+    container_name: noobscribe-api-cpu-no-traefik
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8000
+      - FORCE_CPU=${FORCE_CPU:-1}
+      - DEBUG=${DEBUG:-0}
+      - ENABLE_DIARIZATION=${ENABLE_DIARIZATION:-true}
+      - INCLUDE_DIARIZATION_IN_TEXT=${INCLUDE_DIARIZATION_IN_TEXT:-true}
+      - USE_API=${USE_API:-0}
+      - STT_BASE_URL=${STT_BASE_URL:-}
+      - STT_API_KEY=${STT_API_KEY:-}
+      - MODEL_ID=${MODEL_ID:-nvidia/canary-1b-v2}
+      - MODEL_PATH=${MODEL_PATH:-}
+      - DIARIZATION_MODEL_PATH=${DIARIZATION_MODEL_PATH:-}
+      - TEMPERATURE=${TEMPERATURE:-0.0}
+      - CHUNK_DURATION=${CHUNK_DURATION:-10}
+      - HUGGINGFACE_ACCESS_TOKEN=${HUGGINGFACE_TOKEN:-}
+      - CHROMADB_PATH=/app/data/speakers
+      - RECORDINGS_PATH=/app/data/recordings
+      - DATABASE_URL=sqlite+aiosqlite:////app/data/noobscribe.db
+    ports:
+      - "${NOOBSCRIBE_PUBLISH_PORT:-8000:8000}"
+
+networks:
+  traefik-global-proxy:
+    name: ${TRAEFIK_NETWORK:-traefik-global-proxy}
+    external: true

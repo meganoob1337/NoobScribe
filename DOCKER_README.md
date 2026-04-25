@@ -16,7 +16,7 @@ The workflow **[.github/workflows/docker-publish.yml](.github/workflows/docker-p
 - **Tags (GPU image, [Dockerfile](Dockerfile), `linux/amd64` only):** **`latest`** on `main`; git tags like **`v1.2.3`** produce a full semver tag (e.g. **`1.2.3`**). No per-commit SHA tags.
 - **Tags (CPU image, [Dockerfile.cpu](Dockerfile.cpu), `linux/amd64` only):** **`latest-cpu`** on `main`; **`v*`** releases produce **`1.2.3-cpu`**. Use **`latest-cpu`** (or a pinned version tag) on machines without an NVIDIA GPU.
 
-**ARM hosts (Apple Silicon Macs, aarch64 Linux):** CI does **not** publish a native `linux/arm64` image. Use the **CPU** image and set **`platform: linux/amd64`** so Docker Desktop (or a setup with QEMU/binfmt) runs the amd64 image under emulation. **[docker-compose.cpu.yaml](docker-compose.cpu.yaml)** already sets this. For a manual run:
+**ARM hosts (Apple Silicon Macs, aarch64 Linux):** CI does **not** publish a native `linux/arm64` image. Use the **CPU** image and set **`platform: linux/amd64`** so Docker Desktop (or a setup with QEMU/binfmt) runs the amd64 image under emulation. The `cpu` profiles in **[docker-compose.yml](docker-compose.yml)** already set this. For a manual run:
 
 ```bash
 docker run --platform linux/amd64 -p 8000:8000 \
@@ -41,6 +41,7 @@ Use a [personal access token](https://docs.github.com/en/packages/working-with-a
 From the repository root, **pull the pre-built image** (default) or **build locally**:
 
 ```bash
+cp env.example .env
 docker compose up -d
 ```
 
@@ -51,10 +52,10 @@ docker compose build
 docker compose up -d
 ```
 
-**CPU-only (no NVIDIA GPU):** use **[docker-compose.cpu.yaml](docker-compose.cpu.yaml)** — default image **`latest-cpu`** (`linux/amd64`), **`platform: linux/amd64`** (needed on ARM so the pre-built image is used with emulation), **`Dockerfile.cpu`** for local builds, **`FORCE_CPU=1`**, no GPU device reservations.
+**CPU-only (no NVIDIA GPU):** use `--profile cpu` with **[docker-compose.yml](docker-compose.yml)** — default image **`latest-cpu`** (`linux/amd64`), **`platform: linux/amd64`** (needed on ARM so the pre-built image is used with emulation), **`Dockerfile.cpu`** for local builds, **`FORCE_CPU=1`**, no GPU device reservations.
 
 ```bash
-docker compose -f docker-compose.cpu.yaml up -d
+docker compose --profile cpu up -d
 ```
 
 Stop:
@@ -63,7 +64,7 @@ Stop:
 docker compose down
 ```
 
-The default [docker-compose.yml](docker-compose.yml) publishes **`8000:8000`** and uses **`gpus: all`**. The Traefik file pins one GPU via **`GPU_DEVICE_ID`** (see [env.example](env.example)).
+The default [docker-compose.yml](docker-compose.yml) mode uses the `traefik` profile from `.env` (`COMPOSE_PROFILES=traefik`), running **GPU + Traefik** with no host port publish. Use `--profile no-traefik` (GPU) or `--profile cpu-no-traefik` (CPU) for direct host publish via `NOOBSCRIBE_PUBLISH_PORT`.
 
 ## Manual image build
 
@@ -118,7 +119,7 @@ curl -X POST http://localhost:8000/v1/audio/transcriptions \
 
 ## Traefik (reverse proxy + TLS)
 
-Use **[docker-compose.traefik.yaml](docker-compose.traefik.yaml)** when Traefik already runs on your host (or in another Compose project) and you attach services to a **shared external Docker network**.
+The default mode in **[docker-compose.yml](docker-compose.yml)** is Traefik-enabled. Use it when Traefik already runs on your host (or in another Compose project) and you attach services to a **shared external Docker network**.
 
 ### Prerequisites
 
@@ -157,18 +158,18 @@ Use **[docker-compose.traefik.yaml](docker-compose.traefik.yaml)** when Traefik 
 From the repo root (Compose v2). Omit **`--build`** if you only want the default **GHCR** image; add **`--build`** to rebuild from the local Dockerfile.
 
 ```bash
-docker compose -f docker-compose.traefik.yaml --env-file .env up -d
+docker compose --env-file .env up -d
 # or: ... up -d --build
 ```
 
 Stop:
 
 ```bash
-docker compose -f docker-compose.traefik.yaml --env-file .env down
+docker compose --env-file .env down
 ```
 
 - Traefik routes `https://<NOOBSCRIBE_HOST>/` to the app on container port **8000**.
 - Web UI: `https://<NOOBSCRIBE_HOST>/ui`
-- Optional direct access: `NOOBSCRIBE_PUBLISH_PORT` (default `8000:8000`) still maps the host for debugging.
+- Optional direct access: run either `docker compose --profile no-traefik up -d` (GPU) or `docker compose --profile cpu-no-traefik up -d` (CPU), both using `NOOBSCRIBE_PUBLISH_PORT` (default `8000:8000`).
 
-If labels don’t match your Traefik setup, adjust `TRAEFIK_ENTRYPOINT`, `TRAEFIK_CERT_RESOLVER`, or the label block in `docker-compose.traefik.yaml` to match your static config.
+If labels don’t match your Traefik setup, adjust `TRAEFIK_ENTRYPOINT`, `TRAEFIK_CERT_RESOLVER`, or the label block in `docker-compose.yml` to match your static config.
