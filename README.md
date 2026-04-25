@@ -47,9 +47,10 @@ The built-in UI at `/ui` is a single-page app for managing recordings, transcrip
 
 Prerequisites: [Docker](https://docs.docker.com/get-docker/), [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html) for GPU.
 
-**Pre-built image:** CI publishes **`ghcr.io/meganoob1337/noobscribe`**: GPU builds use tag **`latest`** (`linux/amd64` only). The **CPU** image ([Dockerfile.cpu](Dockerfile.cpu)) is published as **`latest-cpu`**, also **`linux/amd64` only**. **Tags are `latest` / `latest-cpu` on `main` and full semver** (e.g. `1.2.3`, `1.2.3-cpu`) on git tags `v*`. Compose uses the GHCR image by default so you can start without a local build. **On ARM machines (Apple Silicon, aarch64 Linux):** use the **CPU** image and force the **`linux/amd64`** platform (see **[docker-compose.cpu.yaml](docker-compose.cpu.yaml)** and **[DOCKER_README.md](DOCKER_README.md)**) so Docker pulls the published amd64 image and runs it under emulation.
+**Pre-built image:** CI publishes **`ghcr.io/meganoob1337/noobscribe`**: GPU builds use tag **`latest`** (`linux/amd64` only). The **CPU** image ([Dockerfile.cpu](Dockerfile.cpu)) is published as **`latest-cpu`**, also **`linux/amd64` only**. **Tags are `latest` / `latest-cpu` on `main` and full semver** (e.g. `1.2.3`, `1.2.3-cpu`) on git tags `v*`. Compose uses the GHCR image by default so you can start without a local build. **On ARM machines (Apple Silicon, aarch64 Linux):** use CPU mode (see **[DOCKER_README.md](DOCKER_README.md)**), which sets **`platform: linux/amd64`** so Docker pulls the published amd64 image and runs it under emulation.
 
 ```bash
+cp env.example .env
 docker compose up -d
 ```
 
@@ -72,11 +73,22 @@ Copy **[env.example](env.example)** to `.env` and adjust values (Compose loads `
 
 See **[DOCKER_README.md](DOCKER_README.md)** for environment variables, **Traefik + TLS**, and manual `docker run` examples.
 
-**Traefik:** Use **[docker-compose.traefik.yaml](docker-compose.traefik.yaml)** with a pre-existing Traefik stack and external Docker network. Set `NOOBSCRIBE_HOST` and `TRAEFIK_NETWORK` in `.env` (see `env.example`). Full steps in **DOCKER_README.md**.
+### Compose profile matrix
+
+| Mode | Command | Traefik | GPU | Host port publish |
+|------|---------|---------|-----|-------------------|
+| Default | `docker compose up -d` | Yes | Yes | No |
+| CPU + Traefik | `docker compose --profile cpu up -d` | Yes | No | No |
+| GPU + no Traefik | `docker compose --profile no-traefik up -d` | No | Yes | Yes (`NOOBSCRIBE_PUBLISH_PORT`) |
+| CPU + no Traefik | `docker compose --profile cpu-no-traefik up -d` | No | No | Yes (`NOOBSCRIBE_PUBLISH_PORT`) |
+
+**Traefik (default):** `docker compose up -d` uses the default `traefik` profile from `.env` (`COMPOSE_PROFILES=traefik`), which runs GPU + Traefik with no host port publish. Set `NOOBSCRIBE_HOST` and `TRAEFIK_NETWORK` in `.env` (see `env.example`). Full steps in **DOCKER_README.md**.
 
 ### CPU-only (no GPU, no CUDA base image)
 
-- **Compose:** `docker compose -f docker-compose.cpu.yaml up -d` — uses **[docker-compose.cpu.yaml](docker-compose.cpu.yaml)** (default image **`ghcr.io/.../noobscribe:latest-cpu`**, **`platform: linux/amd64`**, **`FORCE_CPU=1`**, no GPU reservations). On **ARM** hosts this platform line is required so Docker uses the published amd64 image with emulation instead of looking for a native arm64 variant.
+- **Compose (CPU + Traefik):** `docker compose --profile cpu up -d` — uses the single **[docker-compose.yml](docker-compose.yml)** in CPU mode (default image **`ghcr.io/.../noobscribe:latest-cpu`**, **`platform: linux/amd64`**, **`FORCE_CPU=1`**, no GPU reservations).
+- **Compose (GPU + no Traefik):** `docker compose --profile no-traefik up -d` — publishes `NOOBSCRIBE_PUBLISH_PORT` (default `8000:8000`) and skips Traefik labels/network.
+- **Compose (CPU + no Traefik):** `docker compose --profile cpu-no-traefik up -d` — CPU mode plus direct host port publish.
 - Build image from **[Dockerfile.cpu](Dockerfile.cpu)** (uses [requirements.lock.txt](requirements.lock.txt) with CUDA-only pins stripped and CPU [PyTorch](https://pytorch.org/) wheels). The Dockerfile sets **`FORCE_CPU=1`** so inference stays on CPU.
 - Example: `docker build -f Dockerfile.cpu -t noobscribe:cpu .`
 - To force CPU on any deployment (including GPU images), set **`FORCE_CPU=1`** (or `true`/`yes`) in the environment. See **`GET /health`** for `force_cpu` and `cuda_available` in **[API_DOCUMENTATION.md](API_DOCUMENTATION.md)**.

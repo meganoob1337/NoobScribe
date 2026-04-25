@@ -23,7 +23,7 @@ Speech recognition models (e.g. **[NVIDIA NeMo](https://github.com/NVIDIA/NeMo)*
 | **Unmodified** from upstream at `6abadfd` | `main.py`, `run.sh`, `tests/test_api.py`, `tests/test_chunking.py` (content was upstream; banners/strings may be updated for NoobScribe branding) |
 | **Modified** from upstream | `audio.py`, `transcription.py`, `diarization/__init__.py`, `models.py`, `config.py`, `api.py`, `.gitignore` |
 | **Replaced** (docs/deps evolved) | `README.md`, `requirements.txt` |
-| **New** in NoobScribe (no upstream equivalent) | `database/`, `routers/`, `services/`, `webui/`, `Dockerfile`, `docker-compose.yml`, `docker-compose.traefik.yaml`, `env.example`, `DOCKER_README.md`, `API_DOCUMENTATION.md`, `AGENTS.md`, `.dockerignore`, `requirements.lock.txt` (pinned deps for Docker), etc. |
+| **New** in NoobScribe (no upstream equivalent) | `database/`, `routers/`, `services/`, `webui/`, `Dockerfile`, `Dockerfile.cpu`, `docker-compose.yml`, `env.example`, `DOCKER_README.md`, `API_DOCUMENTATION.md`, `AGENTS.md`, `.dockerignore`, `requirements.lock.txt` (pinned deps for Docker), etc. |
 
 Per-file SPDX-style notices appear at the top of Python and shell files that trace to the upstream repo.
 
