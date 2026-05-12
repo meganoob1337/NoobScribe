@@ -210,6 +210,42 @@
       return rmsFromAnalyser(this._micAnalyser, this._micScratch);
     }
 
+    _rampGain(gainNode, muted) {
+      if (!gainNode || !this._ctx) return;
+      const g = gainNode.gain;
+      const now = this._ctx.currentTime;
+      const target = muted ? 0 : 1;
+      g.cancelScheduledValues(now);
+      g.setValueAtTime(g.value, now);
+      g.linearRampToValueAtTime(target, now + 0.03);
+    }
+
+    /** Silence mic in the mix without stopping the track (while recording). */
+    setMicMuted(muted) {
+      if (!this._micGain) return;
+      this._rampGain(this._micGain, !!muted);
+    }
+
+    /** Silence window/tab capture in the mix without stopping the track. */
+    setWindowMuted(muted) {
+      if (!this._windowGain) return;
+      this._rampGain(this._windowGain, !!muted);
+    }
+
+    get micMuted() {
+      return !!(this._micGain && this._micGain.gain.value < 0.5);
+    }
+
+    get windowMuted() {
+      return !!(this._windowGain && this._windowGain.gain.value < 0.5);
+    }
+
+    /** Unmute both sources in the mix (e.g. after a take). */
+    resetMixMutes() {
+      if (this._micGain) this._rampGain(this._micGain, false);
+      if (this._windowGain) this._rampGain(this._windowGain, false);
+    }
+
     startRecording() {
       this._ensureContext();
       if (!this.hasLiveAudioSource) {
