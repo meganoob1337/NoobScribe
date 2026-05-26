@@ -52,6 +52,8 @@
       this._mediaRecorder = null;
       this._chunks = [];
       this._mimeType = "";
+      this._windowMuted = false;
+      this._micMuted = false;
     }
 
     _ensureContext() {
@@ -94,6 +96,7 @@
       this._windowSource = this._ctx.createMediaStreamSource(audioOnly);
       this._windowGain = this._ctx.createGain();
       this._windowGain.gain.value = 1;
+      this._windowMuted = false;
       this._windowAnalyser = this._ctx.createAnalyser();
       this._windowAnalyser.fftSize = 256;
       this._windowAnalyser.smoothingTimeConstant = 0.8;
@@ -129,6 +132,7 @@
         }
         this._windowGain = null;
       }
+      this._windowMuted = false;
       if (this._windowAnalyser) {
         try {
           this._windowAnalyser.disconnect();
@@ -150,6 +154,7 @@
       this._micSource = this._ctx.createMediaStreamSource(stream);
       this._micGain = this._ctx.createGain();
       this._micGain.gain.value = 1;
+      this._micMuted = false;
       this._micAnalyser = this._ctx.createAnalyser();
       this._micAnalyser.fftSize = 256;
       this._micAnalyser.smoothingTimeConstant = 0.8;
@@ -180,6 +185,7 @@
         }
         this._micGain = null;
       }
+      this._micMuted = false;
       if (this._micAnalyser) {
         try {
           this._micAnalyser.disconnect();
@@ -208,6 +214,46 @@
         this._micScratch = new Uint8Array(len);
       }
       return rmsFromAnalyser(this._micAnalyser, this._micScratch);
+    }
+
+    _rampGain(gainNode, muted) {
+      if (!gainNode || !this._ctx) return;
+      const g = gainNode.gain;
+      const now = this._ctx.currentTime;
+      const target = muted ? 0 : 1;
+      g.cancelScheduledValues(now);
+      g.setValueAtTime(g.value, now);
+      g.linearRampToValueAtTime(target, now + 0.03);
+    }
+
+    /** Silence mic in the mix without stopping the track (while recording). */
+    setMicMuted(muted) {
+      if (!this._micGain) return;
+      this._micMuted = !!muted;
+      this._rampGain(this._micGain, this._micMuted);
+    }
+
+    /** Silence window/tab capture in the mix without stopping the track. */
+    setWindowMuted(muted) {
+      if (!this._windowGain) return;
+      this._windowMuted = !!muted;
+      this._rampGain(this._windowGain, this._windowMuted);
+    }
+
+    get micMuted() {
+      return this._micMuted;
+    }
+
+    get windowMuted() {
+      return this._windowMuted;
+    }
+
+    /** Unmute both sources in the mix (e.g. after a take). */
+    resetMixMutes() {
+      this._micMuted = false;
+      this._windowMuted = false;
+      if (this._micGain) this._rampGain(this._micGain, false);
+      if (this._windowGain) this._rampGain(this._windowGain, false);
     }
 
     startRecording() {

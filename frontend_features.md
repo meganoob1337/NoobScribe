@@ -58,6 +58,8 @@ Implemented by **`NoobScribeRecorder`** (`recorder.js`):
 - **Mixing**: Web Audio API — sources → gain → analyser (levels) + `MediaStreamDestination`; **MediaRecorder** on the mixed stream (prefers WebM/Opus).
 - **UI**: Toggle window vs mic; **level meters** (RMS 0–1, updated via `requestAnimationFrame` while on route); states `idle` | `capturing` | `recording` | `recorded`.
 - **Recording**: Start requires at least one live source; **elapsed timer** while recording; stop produces a **Blob**, **object URL** for `<audio controls>` preview.
+- **Floating controls (Chrome / Edge)**: After **Start recording**, the app requests **Document Picture-in-Picture** so a small OS-floating window shows elapsed time, **Stop**, **Mute mic**, and **Mute window** (only buttons for sources that were live at start). The main page mirrors the same mute/stop actions. PiP receives timer/state updates via `postMessage` from the main window; button clicks in the PiP DOM are wired in the main script and use `window.postMessage` back to the app. Leaving the Record route closes PiP and tears down capture as before.
+- **In-recording mute**: Implemented by lowering Web Audio **gain** on the mic and/or window path (does not stop MediaRecorder or media tracks). Mutes reset when a take finishes (`stopRecording` success) or on discard.
 - **Upload**: Builds `File` named `recording.webm` from blob → `POST /v1/recordings` → navigates to detail; then tears down recorder state.
 - **Discard**: Revokes URL, clears blob.
 

@@ -92,12 +92,22 @@ function noobScribeApp() {
     recordUploadBusy: false,
     recordError: null,
     recordElapsedSec: 0,
+    recordMicMuted: false,
+    recordWindowMuted: false,
+
+    /** Document PiP floating controls (Chrome / Edge) */
+    _recordPipWindow: null,
+    _recordPipInboundHandler: null,
+    _recordPipLeaveHandler: null,
+    _recordPipMainMessageHandler: null,
 
     /** Mobile slide-out navigation */
     navOpen: false,
 
     init() {
       window.addEventListener("hashchange", () => this.navigate());
+      this._recordPipMainMessageHandler = (ev) => this._onRecordPipMainMessage(ev);
+      window.addEventListener("message", this._recordPipMainMessageHandler);
       this.navigate();
       NoobScribeApi.health()
         .then((h) => {
@@ -174,6 +184,7 @@ function noobScribeApp() {
     },
 
     teardownRecordPage() {
+      this.closeRecordingPip();
       this.stopLevelPolling();
       this.stopRecordTimer();
       if (this.recordedUrl) {
@@ -198,6 +209,249 @@ function noobScribeApp() {
       this.windowCaptureOn = false;
       this.micCaptureOn = false;
       this.recordElapsedSec = 0;
+      this.recordMicMuted = false;
+      this.recordWindowMuted = false;
+    },
+
+    closeRecordingPip() {
+      if (this._recordPipLeaveHandler && window.documentPictureInPicture) {
+        documentPictureInPicture.removeEventListener("leave", this._recordPipLeaveHandler);
+        this._recordPipLeaveHandler = null;
+      }
+      const pip = this._recordPipWindow;
+      this._recordPipWindow = null;
+      if (pip && this._recordPipInboundHandler) {
+        pip.removeEventListener("message", this._recordPipInboundHandler);
+        this._recordPipInboundHandler = null;
+      }
+      if (pip && !pip.closed) {
+        try {
+          pip.close();
+        } catch (e) {
+          /* ignore */
+        }
+      }
+    },
+
+    _onRecordPipMainMessage(ev) {
+      if (ev.origin && ev.origin !== window.location.origin) return;
+      const d = ev.data;
+      if (!d || d.ns !== "record-pip") return;
+      if (this.recorderState !== "recording") return;
+      if (d.action === "stop") this.stopRec();
+      else if (d.action === "toggleMicMute") this.toggleRecordMicMute();
+      else if (d.action === "toggleWindowMute") this.toggleRecordWindowMute();
+    },
+
+    _recordingPipPostTick() {
+      const pip = this._recordPipWindow;
+      if (!pip || pip.closed) return;
+      try {
+        pip.postMessage(
+          { ns: "record-pip", action: "tick", time: this.formatRecordElapsed() },
+          "*"
+        );
+      } catch (e) {
+        /* ignore */
+      }
+    },
+
+    _recordingPipPostState() {
+      const pip = this._recordPipWindow;
+      if (!pip || pip.closed) return;
+      if (!this.recorder) return;
+      try {
+        pip.postMessage(
+          {
+            ns: "record-pip",
+            action: "state",
+            time: this.formatRecordElapsed(),
+            micMuted: this.recorder.micMuted,
+            windowMuted: this.recorder.windowMuted,
+          },
+          "*"
+        );
+      } catch (e) {
+        /* ignore */
+      }
+    },
+
+    async openRecordingPip() {
+      if (!window.documentPictureInPicture || typeof documentPictureInPicture.requestWindow !== "function") {
+        return;
+      }
+      this.closeRecordingPip();
+      const hasMic = !!(this.recorder && this.recorder.micActive);
+      const hasWindow = !!(this.recorder && this.recorder.windowActive);
+      let pipWin;
+      try {
+        pipWin = await documentPictureInPicture.requestWindow({
+          width: 360,
+          height: 200,
+        });
+      } catch (e) {
+        return;
+      }
+      this._recordPipWindow = pipWin;
+      pipWin.document.title = "NoobScribe — recording";
+
+      const doc = pipWin.document;
+      const body = doc.body;
+      body.replaceChildren();
+      Object.assign(body.style, {
+        margin: "0",
+        padding: "12px",
+        boxSizing: "border-box",
+        fontFamily: "system-ui, sans-serif",
+        background: "#0f172a",
+        color: "#e2e8f0",
+        minHeight: "100%",
+      });
+
+      const wrap = doc.createElement("div");
+      Object.assign(wrap.style, {
+        display: "flex",
+        flexDirection: "column",
+        gap: "10px",
+      });
+
+      const row1 = doc.createElement("div");
+      Object.assign(row1.style, {
+        display: "flex",
+        alignItems: "center",
+        gap: "8px",
+        fontSize: "13px",
+      });
+      const dot = doc.createElement("span");
+      Object.assign(dot.style, {
+        width: "8px",
+        height: "8px",
+        borderRadius: "9999px",
+        background: "#f87171",
+        flexShrink: "0",
+      });
+      const lab = doc.createElement("span");
+      lab.textContent = "Recording";
+      lab.style.fontWeight = "600";
+      const timeEl = doc.createElement("span");
+      timeEl.textContent = this.formatRecordElapsed();
+      Object.assign(timeEl.style, {
+        fontFamily: "ui-monospace, monospace",
+        marginLeft: "auto",
+        color: "#94a3b8",
+      });
+      row1.appendChild(dot);
+      row1.appendChild(lab);
+      row1.appendChild(timeEl);
+
+      const row2 = doc.createElement("div");
+      Object.assign(row2.style, {
+        display: "flex",
+        flexWrap: "wrap",
+        gap: "8px",
+        alignItems: "center",
+      });
+
+      const btnStyle = () => {
+        const el = doc.createElement("button");
+        el.type = "button";
+        Object.assign(el.style, {
+          padding: "8px 12px",
+          borderRadius: "8px",
+          border: "1px solid #475569",
+          background: "#1e293b",
+          color: "#f8fafc",
+          fontSize: "12px",
+          fontWeight: "500",
+          cursor: "pointer",
+        });
+        return el;
+      };
+
+      const micBtn = hasMic ? btnStyle() : null;
+      if (micBtn) micBtn.textContent = "Mic";
+
+      const winBtn = hasWindow ? btnStyle() : null;
+      if (winBtn) winBtn.textContent = "Window";
+
+      const stopBtn = btnStyle();
+      stopBtn.textContent = "Stop";
+      Object.assign(stopBtn.style, {
+        background: "#991b1b",
+        borderColor: "#b91c1c",
+        marginLeft: "auto",
+      });
+
+      const applyMuteStyles = () => {
+        if (micBtn && this.recorder) {
+          const m = this.recorder.micMuted;
+          micBtn.style.opacity = m ? "0.65" : "1";
+          micBtn.style.borderColor = m ? "#f87171" : "#475569";
+          micBtn.textContent = m ? "Mic (off)" : "Mic";
+        }
+        if (winBtn && this.recorder) {
+          const m = this.recorder.windowMuted;
+          winBtn.style.opacity = m ? "0.65" : "1";
+          winBtn.style.borderColor = m ? "#f87171" : "#475569";
+          winBtn.textContent = m ? "Window (off)" : "Window";
+        }
+      };
+
+      this._recordPipInboundHandler = (ev) => {
+        const msg = ev.data;
+        if (!msg || msg.ns !== "record-pip") return;
+        if (msg.action === "tick") {
+          timeEl.textContent = msg.time;
+        } else if (msg.action === "state") {
+          timeEl.textContent = msg.time;
+          applyMuteStyles();
+        }
+      };
+      pipWin.addEventListener("message", this._recordPipInboundHandler);
+
+      const runAction = (action) => {
+        if (action === "toggleMicMute") {
+          this.toggleRecordMicMute();
+          applyMuteStyles();
+        } else if (action === "toggleWindowMute") {
+          this.toggleRecordWindowMute();
+          applyMuteStyles();
+        } else if (action === "stop") {
+          this.stopRec();
+        }
+      };
+      if (micBtn) micBtn.addEventListener("click", () => runAction("toggleMicMute"));
+      if (winBtn) winBtn.addEventListener("click", () => runAction("toggleWindowMute"));
+      stopBtn.addEventListener("click", () => runAction("stop"));
+
+      if (micBtn) row2.appendChild(micBtn);
+      if (winBtn) row2.appendChild(winBtn);
+      row2.appendChild(stopBtn);
+
+      wrap.appendChild(row1);
+      wrap.appendChild(row2);
+      body.appendChild(wrap);
+
+      applyMuteStyles();
+
+      this._recordPipLeaveHandler = () => {
+        this._recordPipWindow = null;
+      };
+      documentPictureInPicture.addEventListener("leave", this._recordPipLeaveHandler);
+    },
+
+    toggleRecordMicMute() {
+      if (!this.recorder || !this.recorder.micActive || !this.recorder.isRecording) return;
+      this.recorder.setMicMuted(!this.recorder.micMuted);
+      this._syncRecorderState();
+      this._recordingPipPostState();
+    },
+
+    toggleRecordWindowMute() {
+      if (!this.recorder || !this.recorder.windowActive || !this.recorder.isRecording) return;
+      this.recorder.setWindowMuted(!this.recorder.windowMuted);
+      this._syncRecorderState();
+      this._recordingPipPostState();
     },
 
     startLevelPolling() {
@@ -223,8 +477,12 @@ function noobScribeApp() {
     _syncRecorderState() {
       if (!this.recorder) {
         this.recorderState = "idle";
+        this.recordMicMuted = false;
+        this.recordWindowMuted = false;
         return;
       }
+      this.recordMicMuted = this.recorder.micActive ? this.recorder.micMuted : false;
+      this.recordWindowMuted = this.recorder.windowActive ? this.recorder.windowMuted : false;
       if (this.recordedBlob) {
         this.recorderState = "recorded";
         return;
@@ -248,6 +506,7 @@ function noobScribeApp() {
         if (this._recordStartedAt) {
           this.recordElapsedSec = Math.floor((Date.now() - this._recordStartedAt) / 1000);
         }
+        this._recordingPipPostTick();
       }, 500);
     },
 
@@ -302,13 +561,15 @@ function noobScribeApp() {
       );
     },
 
-    startRec() {
+    async startRec() {
       this.recordError = null;
       if (!this.canStartRecording()) return;
       try {
         this.recorder.startRecording();
         this.startRecordTimer();
         this._syncRecorderState();
+        await this.openRecordingPip();
+        this._recordingPipPostState();
       } catch (e) {
         this.recordError = String(e.message || e);
         this._syncRecorderState();
@@ -318,6 +579,7 @@ function noobScribeApp() {
     async stopRec() {
       if (!this.recorder || !this.recorder.isRecording) return;
       this.recordError = null;
+      this.closeRecordingPip();
       this.stopRecordTimer();
       try {
         const blob = await this.recorder.stopRecording();
@@ -330,6 +592,7 @@ function noobScribeApp() {
         }
         this.recordedBlob = blob;
         this.recordedUrl = URL.createObjectURL(blob);
+        if (this.recorder) this.recorder.resetMixMutes();
         this._syncRecorderState();
       } catch (e) {
         this.recordError = String(e.message || e);
@@ -348,6 +611,7 @@ function noobScribeApp() {
       this.recordedUrl = null;
       this.recordedBlob = null;
       this.recordElapsedSec = 0;
+      if (this.recorder) this.recorder.resetMixMutes();
       this._syncRecorderState();
     },
 

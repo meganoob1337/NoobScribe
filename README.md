@@ -38,7 +38,7 @@ The built-in UI at `/ui` is a single-page app for managing recordings, transcrip
 
 - **Recordings library:** paginated recordings list, responsive table/cards, and quick navigation to details.
 - **Upload flow:** upload audio file with optional recording name and immediate redirect to the created recording.
-- **Browser recording:** capture microphone and/or tab/window audio, live level meters, preview, upload, and discard.
+- **Browser recording:** capture microphone and/or tab/window audio, live level meters, preview, upload, and discard. In Chrome or Edge, a floating picture-in-picture window shows recording time and mute/stop controls while you work in other apps.
 - **Recording detail:** rename recordings, play original audio, run transcription jobs with diarization/word timestamp options, and review prior transcription runs.
 - **Transcript viewer:** formatted transcript display, per-segment snippet playback, `.txt` download, and save detected speaker embeddings.
 - **Speaker management:** list/delete speakers, add embeddings from snippet extraction or manual vector input, inspect embedding snippets, and delete individual embeddings.
