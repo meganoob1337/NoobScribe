@@ -409,12 +409,20 @@ function noobScribeApp() {
       };
       pipWin.addEventListener("message", this._recordPipInboundHandler);
 
-      const post = (action) => {
-        window.postMessage({ ns: "record-pip", action }, window.location.origin);
+      const runAction = (action) => {
+        if (action === "toggleMicMute") {
+          this.toggleRecordMicMute();
+          applyMuteStyles();
+        } else if (action === "toggleWindowMute") {
+          this.toggleRecordWindowMute();
+          applyMuteStyles();
+        } else if (action === "stop") {
+          this.stopRec();
+        }
       };
-      if (micBtn) micBtn.addEventListener("click", () => post("toggleMicMute"));
-      if (winBtn) winBtn.addEventListener("click", () => post("toggleWindowMute"));
-      stopBtn.addEventListener("click", () => post("stop"));
+      if (micBtn) micBtn.addEventListener("click", () => runAction("toggleMicMute"));
+      if (winBtn) winBtn.addEventListener("click", () => runAction("toggleWindowMute"));
+      stopBtn.addEventListener("click", () => runAction("stop"));
 
       if (micBtn) row2.appendChild(micBtn);
       if (winBtn) row2.appendChild(winBtn);

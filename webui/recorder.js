@@ -52,6 +52,8 @@
       this._mediaRecorder = null;
       this._chunks = [];
       this._mimeType = "";
+      this._windowMuted = false;
+      this._micMuted = false;
     }
 
     _ensureContext() {
@@ -94,6 +96,7 @@
       this._windowSource = this._ctx.createMediaStreamSource(audioOnly);
       this._windowGain = this._ctx.createGain();
       this._windowGain.gain.value = 1;
+      this._windowMuted = false;
       this._windowAnalyser = this._ctx.createAnalyser();
       this._windowAnalyser.fftSize = 256;
       this._windowAnalyser.smoothingTimeConstant = 0.8;
@@ -129,6 +132,7 @@
         }
         this._windowGain = null;
       }
+      this._windowMuted = false;
       if (this._windowAnalyser) {
         try {
           this._windowAnalyser.disconnect();
@@ -150,6 +154,7 @@
       this._micSource = this._ctx.createMediaStreamSource(stream);
       this._micGain = this._ctx.createGain();
       this._micGain.gain.value = 1;
+      this._micMuted = false;
       this._micAnalyser = this._ctx.createAnalyser();
       this._micAnalyser.fftSize = 256;
       this._micAnalyser.smoothingTimeConstant = 0.8;
@@ -180,6 +185,7 @@
         }
         this._micGain = null;
       }
+      this._micMuted = false;
       if (this._micAnalyser) {
         try {
           this._micAnalyser.disconnect();
@@ -223,25 +229,29 @@
     /** Silence mic in the mix without stopping the track (while recording). */
     setMicMuted(muted) {
       if (!this._micGain) return;
-      this._rampGain(this._micGain, !!muted);
+      this._micMuted = !!muted;
+      this._rampGain(this._micGain, this._micMuted);
     }
 
     /** Silence window/tab capture in the mix without stopping the track. */
     setWindowMuted(muted) {
       if (!this._windowGain) return;
-      this._rampGain(this._windowGain, !!muted);
+      this._windowMuted = !!muted;
+      this._rampGain(this._windowGain, this._windowMuted);
     }
 
     get micMuted() {
-      return !!(this._micGain && this._micGain.gain.value < 0.5);
+      return this._micMuted;
     }
 
     get windowMuted() {
-      return !!(this._windowGain && this._windowGain.gain.value < 0.5);
+      return this._windowMuted;
     }
 
     /** Unmute both sources in the mix (e.g. after a take). */
     resetMixMutes() {
+      this._micMuted = false;
+      this._windowMuted = false;
       if (this._micGain) this._rampGain(this._micGain, false);
       if (this._windowGain) this._rampGain(this._windowGain, false);
     }
