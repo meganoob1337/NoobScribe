@@ -32,6 +32,7 @@ function noobScribeApp() {
     transcription: null,
     trLoading: false,
     trError: null,
+    copied: false,
 
     /** Transcript segment snippet playback (single hidden Audio, no preload until play) */
     _trSegmentAudio: null,
@@ -1348,6 +1349,15 @@ function noobScribeApp() {
       }
       const ft = t.full_text;
       return ft != null ? String(ft) : "";
+    },
+
+    copyTranscription() {
+      if (!this.transcription) return;
+      const text = this.formattedTranscript();
+      navigator.clipboard.writeText(text).then(() => {
+        this.copied = true;
+        setTimeout(() => { this.copied = false; }, 2000);
+      });
     },
 
     downloadTranscription() {

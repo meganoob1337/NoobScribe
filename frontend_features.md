@@ -81,6 +81,7 @@ Rebuild note: permissions UX, codec support, and “tab vs window” audio behav
 
 - **Load**: `GET /v1/recordings/:rid/transcriptions/:tid`.
 - **Formatted body**: If `segments[]` exists, builds text with **one segment per paragraph**: `[resolved_label] body`, where label comes from `transcription.speakers[]` (`display_name` or id). **Strips** a leading duplicate speaker prefix from segment text (e.g. `SPEAKER_00: `) when it matches the segment’s diarization id (case-insensitive). Unknown speaker id still shows body only. If no segments, falls back to `full_text`.
+- **Copy**: Copies the full `formattedTranscript()` output to the clipboard via `navigator.clipboard.writeText()`; shows a brief "Copied!" confirmation that auto-hides after 2 seconds.
 - **Download**: Client-side **Blob** download as `transcription-<sanitized-id>.txt` from `formattedTranscript()` output.
 - **Speakers block**: For each entry in `transcription.speakers` with a non-empty `embedding`, show id, optional `display_name`, “matched” badge, **Save as…** → opens the same “save embedding” flow as on the Speakers page (load speakers list, choose existing or new name, POST/PUT).
 - **Segments list**: Per segment: time range (`start`–`end`, one decimal), resolved speaker label, stripped text, and optional **play** control if `start`/`end` are valid numbers and `end > start`.
