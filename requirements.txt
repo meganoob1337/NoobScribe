@@ -15,7 +15,7 @@ sentencepiece
 pandas
 jiwer
 librosa
-pyannote-audio
+pyannote-audio>=4.0.4
 webdataset
 datasets
 editdistance

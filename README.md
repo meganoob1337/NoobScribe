@@ -1,6 +1,6 @@
 # NoobScribe
 
-**NoobScribe** is a FastAPI service that exposes an **OpenAI Whisper–compatible** HTTP API for speech-to-text, powered by **[NVIDIA Canary 1B v2](https://huggingface.co/nvidia/canary-1b-v2)** via **[NVIDIA NeMo](https://github.com/NVIDIA/NeMo)** and optional **[Pyannote.audio](https://github.com/pyannote/pyannote-audio)** speaker diarization ([default pipeline on Hugging Face](https://huggingface.co/pyannote/speaker-diarization-3.1)).
+**NoobScribe** is a FastAPI service that exposes an **OpenAI Whisper–compatible** HTTP API for speech-to-text, powered by **[NVIDIA Canary 1B v2](https://huggingface.co/nvidia/canary-1b-v2)** via **[NVIDIA NeMo](https://github.com/NVIDIA/NeMo)** and optional **[Pyannote.audio](https://github.com/pyannote/pyannote-audio)** speaker diarization ([default pipeline on Hugging Face](https://huggingface.co/pyannote/speaker-diarization-community-1)).
 
 Use case: run a zero-install transcription workflow from the browser - upload meeting audio or record live from mic/tab audio, then review and manage speaker-labeled transcripts in one place.
 
@@ -109,7 +109,7 @@ source venv/bin/activate   # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-Set `HUGGINGFACE_ACCESS_TOKEN` if you use Hugging Face for diarization (or set `DIARIZATION_MODEL_PATH` for offline pyannote). **Pyannote-audio** models on Hugging Face are **gated**: sign in, open each model card you need (for example the default [speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1) pipeline), and **accept the access terms** on the card before downloads will succeed with your token.
+Set `HUGGINGFACE_ACCESS_TOKEN` if you use Hugging Face for diarization (or set `DIARIZATION_MODEL_PATH` for offline pyannote). **Pyannote-audio** models on Hugging Face are **gated**: sign in, open each model card you need (for example the default [speaker-diarization-community-1](https://huggingface.co/pyannote/speaker-diarization-community-1) pipeline), and **accept the access terms** on the card before downloads will succeed with your token.
 
 ```bash
 ./run.sh --hf-token "your_token"    # optional
@@ -127,7 +127,7 @@ Set `HUGGINGFACE_ACCESS_TOKEN` if you use Hugging Face for diarization (or set `
 | `MODEL_ID` | `nvidia/canary-1b-v2` | **Local mode:** [Canary](https://huggingface.co/nvidia/canary-1b-v2) / [NeMo](https://github.com/NVIDIA/NeMo) from Hugging Face. **API mode:** passed to the remote API as the `model` name (e.g. `whisper-1`). |
 | `MODEL_PATH` | _(unset)_ | Local [NeMo](https://github.com/NVIDIA/NeMo) `.nemo` checkpoint (offline ASR) |
 | `DIARIZATION_MODEL_PATH` | _(unset)_ | Local [Pyannote](https://github.com/pyannote/pyannote-audio) pipeline dir |
-| `HUGGINGFACE_ACCESS_TOKEN` | _(unset)_ | For [pyannote/speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1) when not offline; Pyannote models are **gated** on Hugging Face — you must accept the terms on each model card (see note below) |
+| `HUGGINGFACE_ACCESS_TOKEN` | _(unset)_ | For [pyannote/speaker-diarization-community-1](https://huggingface.co/pyannote/speaker-diarization-community-1) when not offline; Pyannote models are **gated** on Hugging Face — you must accept the terms on each model card (see note below) |
 | `DATABASE_URL` | `sqlite+aiosqlite:///./data/noobscribe.db` | Recordings metadata |
 | `CHROMADB_PATH` | `./data/speakers` | [Chroma](https://www.trychroma.com/) speaker embedding store |
 | `RECORDINGS_PATH` | `./data/recordings` | Uploaded audio |
@@ -137,6 +137,8 @@ Set `HUGGINGFACE_ACCESS_TOKEN` if you use Hugging Face for diarization (or set `
 | `FORCE_CPU` | _(unset)_ | When `1`/`true`/`yes`, use CPU for ASR, diarization, and language ID even if CUDA is available; **Dockerfile.cpu** sets this by default |
 
 **Gated Pyannote models:** The **pyannote-audio** checkpoints used for diarization (including the default pipeline and any sub-models it pulls) are hosted on Hugging Face under **gated** repositories. Create a [Hugging Face access token](https://huggingface.co/settings/tokens), then visit each required model page while logged in and **accept the user conditions** (e.g. “Agree and access repository”). Until you do, `huggingface_hub` may return access errors even with a valid token.
+
+**Upgrading from speaker-diarization-3.1:** NoobScribe now uses **community-1** (pyannote.audio 4.x). Accept the terms on the [community-1 model card](https://huggingface.co/pyannote/speaker-diarization-community-1) separately from 3.1. For offline use, clone community-1 into `DIARIZATION_MODEL_PATH` (`git clone https://hf.co/pyannote/speaker-diarization-community-1 /path/to/dir`) — a cached 3.1 directory is not compatible. Existing speaker enrollments use the same WeSpeaker embedding family and should keep working; re-enrolling from a fresh clip may improve match quality.
 
 ## Testing
 
@@ -152,4 +154,4 @@ NoobScribe project code is licensed under the **MIT License**. See **[LICENSE](L
 
 For provenance details and upstream attribution, see **[ATTRIBUTION.md](ATTRIBUTION.md)**.
 
-**ASR and diarization models** have their own terms — see **[Canary](https://huggingface.co/nvidia/canary-1b-v2)** and **[Pyannote diarization](https://huggingface.co/pyannote/speaker-diarization-3.1)** model cards (Canary is commonly **CC-BY-4.0**; confirm on each card you use).
+**ASR and diarization models** have their own terms — see **[Canary](https://huggingface.co/nvidia/canary-1b-v2)** and **[Pyannote diarization](https://huggingface.co/pyannote/speaker-diarization-community-1)** model cards (Canary is commonly **CC-BY-4.0**; community-1 is **CC-BY-4.0**; confirm on each card you use).

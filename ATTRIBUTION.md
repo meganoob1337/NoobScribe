@@ -33,7 +33,7 @@ Per-file SPDX-style notices appear at the top of Python and shell files that tra
 |-----------|------|--------|
 | **NVIDIA NeMo** | ASR toolkit | [NeMo (GitHub)](https://github.com/NVIDIA/NeMo) |
 | **Canary 1B v2** | Default speech recognition model | [Model card (Hugging Face)](https://huggingface.co/nvidia/canary-1b-v2) |
-| **Pyannote.audio** | Speaker diarization | [Project (GitHub)](https://github.com/pyannote/pyannote-audio) · [speaker-diarization-3.1 (HF)](https://huggingface.co/pyannote/speaker-diarization-3.1) |
+| **Pyannote.audio** | Speaker diarization | [Project (GitHub)](https://github.com/pyannote/pyannote-audio) · [speaker-diarization-community-1 (HF)](https://huggingface.co/pyannote/speaker-diarization-community-1) |
 | **SpeechBrain** | Spoken language identification (optional) | [SpeechBrain](https://speechbrain.github.io/) · [lang-id model (HF)](https://huggingface.co/speechbrain/lang-id-voxlingua107-ecapa) |
 | **Chroma** | Vector store for speaker embeddings | [Chroma](https://www.trychroma.com/) · [chroma-core/chroma (GitHub)](https://github.com/chroma-core/chroma) |
 | **SQLAlchemy** | Async ORM / SQLite for recordings | [SQLAlchemy](https://www.sqlalchemy.org/) |

@@ -6,7 +6,7 @@ GPU-backed Docker setup for **NoobScribe** (NeMo ASR + optional pyannote diariza
 
 1. [Docker](https://docs.docker.com/get-docker/)
 2. [NVIDIA Container Toolkit](https://github.com/NVIDIA/nvidia-docker) for GPU
-3. Hugging Face token for **remote** diarization, **or** `DIARIZATION_MODEL_PATH` for offline pyannote
+3. Hugging Face token for **remote** diarization (accept terms on [pyannote/speaker-diarization-community-1](https://huggingface.co/pyannote/speaker-diarization-community-1)), **or** `DIARIZATION_MODEL_PATH` for offline pyannote (clone community-1, not 3.1)
 
 ## Pre-built image (GitHub Container Registry)
 

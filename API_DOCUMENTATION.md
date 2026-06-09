@@ -1044,7 +1044,8 @@ interface HealthResponse {
 
 ### Speaker Diarization
 
-- Diarization uses **`pyannote/speaker-diarization-3.1`** from HuggingFace **unless** `DIARIZATION_MODEL_PATH` is set to a local pipeline directory (fully offline).
+- Diarization uses **`pyannote/speaker-diarization-community-1`** (pyannote.audio 4.x) from HuggingFace **unless** `DIARIZATION_MODEL_PATH` is set to a local pipeline directory (fully offline). Accept the community-1 model terms on Hugging Face before download; a 3.1 offline cache is not compatible.
+- Segment/speaker assignment uses **exclusive speaker diarization** from community-1 for better alignment with transcription timestamps.
 - With HuggingFace, configure a token via:
   - Environment variable: `HUGGINGFACE_ACCESS_TOKEN`
   - Command-line argument: `--hf-token`

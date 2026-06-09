@@ -1,5 +1,5 @@
 # Use NVIDIA CUDA base image for GPU support
-FROM nvidia/cuda:12.9.1-cudnn-runtime-ubuntu24.04
+FROM nvidia/cuda:13.0.1-runtime-ubuntu24.04
 
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive
@@ -19,13 +19,13 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 # Copy requirements first (for better caching)
-COPY requirements.lock.txt .
-
+COPY requirements.txt requirements.txt
 # Create and activate virtual environment
 RUN python3 -m venv venv
 RUN . venv/bin/activate && pip install --upgrade pip
 RUN --mount=type=cache,target=/root/.cache/pip \
- . venv/bin/activate && pip install -r requirements.lock.txt
+ . venv/bin/activate && pip install -r requirements.txt     --extra-index-url https://download.pytorch.org/whl/cu130
+
 
 # Copy application code
 COPY . .

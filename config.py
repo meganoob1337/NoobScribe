@@ -32,6 +32,7 @@ DEFAULT_CHUNK_DURATION = 20  # seconds per chunk for long audio
 HF_TOKEN = os.environ.get("HUGGINGFACE_ACCESS_TOKEN")
 
 # Diarization settings
+DEFAULT_DIARIZATION_MODEL = "pyannote/speaker-diarization-community-1"
 DEFAULT_DIARIZE = True
 DEFAULT_NUM_SPEAKERS = None  # None means auto-detection
 DEFAULT_INCLUDE_DIARIZATION_IN_TEXT = True  # Whether to include speaker labels in the text
