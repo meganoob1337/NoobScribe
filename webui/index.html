@@ -212,8 +212,8 @@
       <p x-show="uploadError" class="text-red-400 text-sm" x-text="uploadError"></p>
       <label class="block text-sm text-slate-400">Display name (optional)</label>
       <input type="text" x-model="uploadName" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white" placeholder="Meeting notes" />
-      <label class="block text-sm text-slate-400">Audio file</label>
-      <input type="file" accept="audio/*,.wav,.mp3,.m4a,.flac,.ogg" @change="onUploadFile($event)" class="block w-full text-sm text-slate-400" />
+      <label class="block text-sm text-slate-400">Audio or video file</label>
+      <input type="file" accept="audio/*,video/*,.wav,.mp3,.m4a,.flac,.ogg,.webm,.mp4,.mov,.mkv,.avi" @change="onUploadFile($event)" class="block w-full text-sm text-slate-400" />
       <button type="button" @click="submitUpload()" :disabled="uploadBusy" class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-medium" x-text="uploadBusy ? 'Uploading…' : 'Upload'"></button>
     </section>
 

@@ -45,7 +45,7 @@ Navigation uses `location.hash` (no server-side router). `hashchange` triggers p
 
 ## Feature: upload recording (`upload`)
 
-- Optional display name; file input accepts common audio types (`accept` includes `audio/*` and extensions).
+- Optional display name; file input accepts common audio and video types (`accept` includes `audio/*`, `video/*`, and extensions such as `.mp4`, `.webm`, `.mov`).
 - **Submit**: `POST /v1/recordings` multipart (`file`, optional `name`) → on success navigates to `#/r/:id`.
 - **States**: Busy button, validation error if no file chosen.
 

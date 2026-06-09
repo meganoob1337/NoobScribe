@@ -21,6 +21,14 @@ Use case: run a zero-install transcription workflow from the browser - upload me
 
 Full endpoint reference: **[API_DOCUMENTATION.md](API_DOCUMENTATION.md)**
 
+See **[GUIDE.md](GUIDE.md)** for a visual walkthrough of the web UI with screenshots.
+
+- [Recordings library](GUIDE.md#recordings-library)
+- [Upload](GUIDE.md#upload)
+- [Record in browser](GUIDE.md#record-in-browser)
+- [Transcript viewer](GUIDE.md#transcript-viewer)
+- [Speaker management](GUIDE.md#speaker-management)
+
 ## Core functionality
 
 NoobScribe is built around a Whisper-compatible transcription API with persistent storage and speaker-aware post-processing:
