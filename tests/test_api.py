@@ -70,12 +70,44 @@ def main():
                 
                 print(f"Status code: {response.status_code}")
                 print(f"Time taken: {elapsed:.2f} seconds")
-                
-                if response.status_code == 200:
+
+                result = None
+                if response.status_code == 202:
+                    queued = response.json()
+                    job_id = queued.get("job_id")
+                    print(f"Job queued: {job_id}")
+                    if job_id:
+                        poll_start = time.time()
+                        while True:
+                            job_resp = requests.get(f"{args.url}/v1/transcription-jobs/{job_id}")
+                            job_resp.raise_for_status()
+                            job = job_resp.json()
+                            stage = job.get("progress_stage")
+                            cur = job.get("progress_current")
+                            total = job.get("progress_total")
+                            if stage:
+                                print(f"  progress: {stage} {cur}/{total}" if cur is not None else f"  progress: {stage}")
+                            if job.get("status") == "completed":
+                                result = job.get("result") or {}
+                                elapsed = time.time() - poll_start
+                                print(f"Job completed in {elapsed:.2f} seconds (poll time)")
+                                break
+                            if job.get("status") == "failed":
+                                print(f"Job failed: {job.get('error_message')}")
+                                break
+                            time.sleep(2)
+                elif response.status_code == 200:
                     content_type = response.headers.get("Content-Type", "")
-                    
                     if "json" in content_type:
                         result = response.json()
+                    else:
+                        text = response.text
+                        print(f"Response text preview ({len(text)} chars):")
+                        print(text[:500] + ("..." if len(text) > 500 else ""))
+                        result = None
+
+                if result is not None:
+                    if isinstance(result, dict):
                         # Pretty print with truncated text
                         if "text" in result and len(result["text"]) > 100:
                             text_preview = result["text"][:100] + "..."
@@ -93,12 +125,7 @@ def main():
                             if result["segments"]:
                                 print("First segment:")
                                 pprint(result["segments"][0])
-                    else:
-                        # For text formats, print a preview
-                        text = response.text
-                        print(f"Response text preview ({len(text)} chars):")
-                        print(text[:500] + ("..." if len(text) > 500 else ""))
-                else:
+                elif response.status_code not in (200, 202):
                     print(f"Error response: {response.text}")
         
         except Exception as e:

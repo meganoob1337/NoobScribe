@@ -30,3 +30,5 @@ python-dotenv
 sqlalchemy>=2.0
 aiosqlite>=0.19
 speechbrain
+redis>=5.0
+rq>=2.0

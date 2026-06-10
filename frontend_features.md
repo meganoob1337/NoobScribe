@@ -19,6 +19,7 @@ Navigation uses `location.hash` (no server-side router). `hashchange` triggers p
 | `#/upload` | `upload` | File upload to create a recording |
 | `#/record` | `record` | In-browser capture + upload |
 | `#/speakers` | `speakers` | Speaker database + enrollment |
+| `#/jobs` | `jobs` | All visible transcription jobs (queue/history) |
 | `#/r/:recordingId` | `detail` | One recording: audio, transcribe, transcriptions list |
 | `#/r/:recordingId/t/:transcriptionId` | `transcript` | Read transcript, segments, save embeddings |
 
@@ -29,11 +30,13 @@ Navigation uses `location.hash` (no server-side router). `hashchange` triggers p
 - Leaving **`speakers`**: tears down mic enrollment capture (`MediaRecorder` for extract flow), clears extract UI state.
 - Leaving **`record`**: stops level polling, record timer, revokes preview object URL, destroys `NoobScribeRecorder`.
 - Leaving **`transcript`** (or any non-transcript route): stops segment snippet audio playback and clears the hidden `Audio` element’s source.
+- Leaving **`detail`**: stops recording-jobs polling interval.
+- Leaving **`jobs`**: stops global jobs polling interval.
 
 ## Global chrome
 
 - **Layout**: Fixed **sidebar** on large screens; **slide-out drawer** on small screens with backdrop, hamburger in sticky header, Escape closes drawer.
-- **Nav items**: Recordings (active for list + detail + transcript), Upload, Record, Speakers; **API docs** link to `/docs` (full navigation, not hash).
+- **Nav items**: Recordings (active for list + detail + transcript), Upload, Record, Speakers, Jobs; **API docs** link to `/docs` (full navigation, not hash).
 - **Health** (`GET /health`): Fetched once on init. Sidebar (and mobile header subtitle) show model readiness (`model_loaded`) and `config.model_id`. Errors surface as amber “API: …” text.
 
 ## Feature: recordings list (`list`)
@@ -72,10 +75,22 @@ Rebuild note: permissions UX, codec support, and “tab vs window” audio behav
 - **Audio playback**: `<audio>` src = `GET /v1/recordings/:id/audio` (URL builder in client).
 - **Transcribe panel**:
   - Options bound to state: optional **language** string; checkboxes **diarize**, **word_timestamps**, **include_diarization_in_text**.
-  - **Run** sends `POST /v1/recordings/:id/transcribe` as **FormData** with: `language` (if set), `response_format: verbose_json`, `timestamps: true`, `word_timestamps`, `diarize`, `include_diarization_in_text`, `temperature: 0`.
-  - After success, reloads recording to refresh transcriptions list.
+  - **Run** sends `POST /v1/recordings/:id/transcribe` as **FormData** (returns `202` + `job_id`), then **polls** `GET /v1/transcription-jobs/:jobId` every ~2s until `completed` or `failed`.
+  - Shows live progress from `progress_stage` / `progress_current` / `progress_total` (e.g. “Transcribing chunk 3/10…”, “Running diarization…”).
+  - After queueing, refreshes the **Active jobs** panel via `GET /v1/recordings/:id/transcription-jobs`.
+  - After success, reloads recording to refresh transcriptions list. Short HTTP requests keep the rest of the UI responsive during long jobs.
+- **Active jobs panel**: Shows **queued** and **running** jobs for this recording only. Polls every ~2s while any are active. Each row: status badge, job type, progress text, **Cancel** → `POST /v1/transcription-jobs/:jobId/cancel`.
 - **Transcriptions list**: Each item shows created time and “· diarized” if `diarization_enabled`; click → `#/r/:id/t/:transcriptionId`.
 - **Delete recording**: Confirm dialog → `DELETE /v1/recordings/:id` → navigate home.
+
+## Feature: transcription jobs (`jobs`)
+
+- **Load**: `GET /v1/transcription-jobs?limit=100` — active jobs plus historic rows while still in Redis.
+- **Refresh** button re-fetches the list.
+- **Table columns**: created time, job type, status badge, recording name (link to `#/r/:id` when present), progress text, actions.
+- **Cancel**: For `cancellable` rows → `POST /v1/transcription-jobs/:jobId/cancel`.
+- **View transcript**: When `status === completed` and both `recording_id` and `transcription_id` are set → `#/r/:rid/t/:tid`.
+- **Polling**: Every ~2s while any job is queued or running; stops when leaving the route or when no active jobs remain.
 
 ## Feature: transcript viewer (`transcript`)
 
@@ -102,8 +117,8 @@ Two tabs:
 1. **From audio snippet**
    - Optional label field (`extractSnippetName`).
    - Source: **file** input or **in-page mic record** (simple `MediaRecorder` on mic-only stream, WebM blob + preview URL).
-   - **Extract**: `POST /v1/speakers/extract-from-audio` multipart with file, optional `name`, `response_format: verbose_json`, `timestamps: true`, `word_timestamps: false`, `diarize: true`, `include_diarization_in_text: false`, `temperature: 0`.
-   - Shows optional `recording_id` note (hidden enrollment recording), formatted transcript preview (`extractFormattedTranscript()` — same bracket/strip rules as main transcript), and **Detected speakers** with **≈ nearest** icon (same nearest-embeddings popover as transcript speakers), **Save as…** per speaker with embedding.
+   - **Extract**: `POST /v1/speakers/extract-from-audio` multipart (returns `202` + `job_id`), then polls the job endpoint; uses `job.result` when complete. Same form fields: optional `name`, `response_format: verbose_json`, `timestamps: true`, `word_timestamps: false`, `diarize: true`, `include_diarization_in_text: false`, `temperature: 0`.
+   - Shows chunk/diarization progress while the worker runs; on completion shows optional `recording_id` note (hidden enrollment recording), formatted transcript preview (`extractFormattedTranscript()` — same bracket/strip rules as main transcript), and **Detected speakers** with **≈ nearest** icon (same nearest-embeddings popover as transcript speakers), **Save as…** per speaker with embedding.
    - If no speaker has a non-empty `embedding` array, sets a helpful **error message** (diarization/embeddings unavailable, clip quality, etc.).
 
 2. **Manual embedding**

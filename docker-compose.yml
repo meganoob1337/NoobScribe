@@ -14,6 +14,7 @@ x-noobscribe-common: &noobscribe-common
   environment:
     - HOST=0.0.0.0
     - PORT=8000
+    - SKIP_MODEL_LOAD=1
     - DEBUG=${DEBUG:-0}
     - ENABLE_DIARIZATION=${ENABLE_DIARIZATION:-true}
     - INCLUDE_DIARIZATION_IN_TEXT=${INCLUDE_DIARIZATION_IN_TEXT:-true}
@@ -29,6 +30,8 @@ x-noobscribe-common: &noobscribe-common
     - CHROMADB_PATH=/app/data/speakers
     - RECORDINGS_PATH=/app/data/recordings
     - DATABASE_URL=sqlite+aiosqlite:////app/data/noobscribe.db
+    - REDIS_URL=redis://redis:6379/0
+    - QUEUE_TRANSCRIPTION=${QUEUE_TRANSCRIPTION:-1}
   volumes:
     - ./huggingface:/root/.cache/huggingface
     - ./data:/app/data
@@ -54,13 +57,32 @@ x-traefik-labels: &traefik-labels
   - "traefik.http.middlewares.noobscribe-api-headers.headers.stsseconds=31536000"
   - "traefik.http.routers.noobscribe-api.tls=true"
 
+x-noobscribe-worker-common: &noobscribe-worker-common
+  volumes:
+    - ./huggingface:/root/.cache/huggingface
+    - ./data:/app/data
+  restart: unless-stopped
+  depends_on:
+    - redis
+  command: ["/app/venv/bin/python", "-m", "workers.run"]
+
 services:
+  redis:
+    image: redis:7-alpine
+    container_name: noobscribe-redis
+    restart: unless-stopped
+    volumes:
+      - ./data/redis:/data
+    command: ["redis-server", "--appendonly", "yes"]
+
   noobscribe-api:
     <<: *noobscribe-common
     profiles: ["traefik"]
     image: ${NOOBSCRIBE_IMAGE:-ghcr.io/meganoob1337/noobscribe:latest}
     build: .
     container_name: noobscribe-api
+    depends_on:
+      - redis
     deploy:
       resources:
         reservations:
@@ -83,9 +105,12 @@ services:
       context: .
       dockerfile: Dockerfile.cpu
     container_name: noobscribe-api-cpu
+    depends_on:
+      - redis
     environment:
       - HOST=0.0.0.0
       - PORT=8000
+      - SKIP_MODEL_LOAD=1
       - FORCE_CPU=${FORCE_CPU:-1}
       - DEBUG=${DEBUG:-0}
       - ENABLE_DIARIZATION=${ENABLE_DIARIZATION:-true}
@@ -102,10 +127,74 @@ services:
       - CHROMADB_PATH=/app/data/speakers
       - RECORDINGS_PATH=/app/data/recordings
       - DATABASE_URL=sqlite+aiosqlite:////app/data/noobscribe.db
+      - REDIS_URL=redis://redis:6379/0
+      - QUEUE_TRANSCRIPTION=${QUEUE_TRANSCRIPTION:-1}
     networks:
       - default
       - traefik-global-proxy
     labels: *traefik-labels
+
+  noobscribe-worker-cpu:
+    <<: *noobscribe-worker-common
+    profiles: ["cpu"]
+    image: ${NOOBSCRIBE_IMAGE:-ghcr.io/meganoob1337/noobscribe:latest-cpu}
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: Dockerfile.cpu
+    container_name: noobscribe-worker-cpu
+    environment:
+      - FORCE_CPU=${FORCE_CPU:-1}
+      - DEBUG=${DEBUG:-0}
+      - ENABLE_DIARIZATION=${ENABLE_DIARIZATION:-true}
+      - INCLUDE_DIARIZATION_IN_TEXT=${INCLUDE_DIARIZATION_IN_TEXT:-true}
+      - USE_API=${USE_API:-0}
+      - STT_BASE_URL=${STT_BASE_URL:-}
+      - STT_API_KEY=${STT_API_KEY:-}
+      - MODEL_ID=${MODEL_ID:-nvidia/canary-1b-v2}
+      - MODEL_PATH=${MODEL_PATH:-}
+      - DIARIZATION_MODEL_PATH=${DIARIZATION_MODEL_PATH:-}
+      - TEMPERATURE=${TEMPERATURE:-0.0}
+      - CHUNK_DURATION=${CHUNK_DURATION:-10}
+      - HUGGINGFACE_ACCESS_TOKEN=${HUGGINGFACE_TOKEN:-}
+      - CHROMADB_PATH=/app/data/speakers
+      - RECORDINGS_PATH=/app/data/recordings
+      - DATABASE_URL=sqlite+aiosqlite:////app/data/noobscribe.db
+      - REDIS_URL=redis://redis:6379/0
+      - QUEUE_TRANSCRIPTION=${QUEUE_TRANSCRIPTION:-1}
+
+  noobscribe-worker:
+    <<: *noobscribe-worker-common
+    profiles: ["traefik"]
+    image: ${NOOBSCRIBE_IMAGE:-ghcr.io/meganoob1337/noobscribe:latest}
+    build: .
+    container_name: noobscribe-worker
+    environment:
+      - DEBUG=${DEBUG:-0}
+      - ENABLE_DIARIZATION=${ENABLE_DIARIZATION:-true}
+      - INCLUDE_DIARIZATION_IN_TEXT=${INCLUDE_DIARIZATION_IN_TEXT:-true}
+      - USE_API=${USE_API:-0}
+      - STT_BASE_URL=${STT_BASE_URL:-}
+      - STT_API_KEY=${STT_API_KEY:-}
+      - MODEL_ID=${MODEL_ID:-nvidia/canary-1b-v2}
+      - MODEL_PATH=${MODEL_PATH:-}
+      - DIARIZATION_MODEL_PATH=${DIARIZATION_MODEL_PATH:-}
+      - TEMPERATURE=${TEMPERATURE:-0.0}
+      - CHUNK_DURATION=${CHUNK_DURATION:-10}
+      - HUGGINGFACE_ACCESS_TOKEN=${HUGGINGFACE_TOKEN:-}
+      - CHROMADB_PATH=/app/data/speakers
+      - RECORDINGS_PATH=/app/data/recordings
+      - DATABASE_URL=sqlite+aiosqlite:////app/data/noobscribe.db
+      - REDIS_URL=redis://redis:6379/0
+      - QUEUE_TRANSCRIPTION=${QUEUE_TRANSCRIPTION:-1}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids:
+                - ${GPU_DEVICE_ID:-0}
+              capabilities: [gpu]
 
   noobscribe-api-no-traefik:
     <<: *noobscribe-common
@@ -113,8 +202,43 @@ services:
     image: ${NOOBSCRIBE_IMAGE:-ghcr.io/meganoob1337/noobscribe:latest}
     build: .
     container_name: noobscribe-api-no-traefik
+    depends_on:
+      - redis
     ports:
       - "${NOOBSCRIBE_PUBLISH_PORT:-8000:8000}"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids:
+                - ${GPU_DEVICE_ID:-0}
+              capabilities: [gpu]
+
+  noobscribe-worker-no-traefik:
+    <<: *noobscribe-worker-common
+    profiles: ["no-traefik"]
+    image: ${NOOBSCRIBE_IMAGE:-ghcr.io/meganoob1337/noobscribe:latest}
+    build: .
+    container_name: noobscribe-worker-no-traefik
+    environment:
+      - DEBUG=${DEBUG:-0}
+      - ENABLE_DIARIZATION=${ENABLE_DIARIZATION:-true}
+      - INCLUDE_DIARIZATION_IN_TEXT=${INCLUDE_DIARIZATION_IN_TEXT:-true}
+      - USE_API=${USE_API:-0}
+      - STT_BASE_URL=${STT_BASE_URL:-}
+      - STT_API_KEY=${STT_API_KEY:-}
+      - MODEL_ID=${MODEL_ID:-nvidia/canary-1b-v2}
+      - MODEL_PATH=${MODEL_PATH:-}
+      - DIARIZATION_MODEL_PATH=${DIARIZATION_MODEL_PATH:-}
+      - TEMPERATURE=${TEMPERATURE:-0.0}
+      - CHUNK_DURATION=${CHUNK_DURATION:-10}
+      - HUGGINGFACE_ACCESS_TOKEN=${HUGGINGFACE_TOKEN:-}
+      - CHROMADB_PATH=/app/data/speakers
+      - RECORDINGS_PATH=/app/data/recordings
+      - DATABASE_URL=sqlite+aiosqlite:////app/data/noobscribe.db
+      - REDIS_URL=redis://redis:6379/0
+      - QUEUE_TRANSCRIPTION=${QUEUE_TRANSCRIPTION:-1}
     deploy:
       resources:
         reservations:
@@ -136,6 +260,7 @@ services:
     environment:
       - HOST=0.0.0.0
       - PORT=8000
+      - SKIP_MODEL_LOAD=1
       - FORCE_CPU=${FORCE_CPU:-1}
       - DEBUG=${DEBUG:-0}
       - ENABLE_DIARIZATION=${ENABLE_DIARIZATION:-true}
@@ -152,8 +277,41 @@ services:
       - CHROMADB_PATH=/app/data/speakers
       - RECORDINGS_PATH=/app/data/recordings
       - DATABASE_URL=sqlite+aiosqlite:////app/data/noobscribe.db
+      - REDIS_URL=redis://redis:6379/0
+      - QUEUE_TRANSCRIPTION=${QUEUE_TRANSCRIPTION:-1}
+    depends_on:
+      - redis
     ports:
       - "${NOOBSCRIBE_PUBLISH_PORT:-8000:8000}"
+
+  noobscribe-worker-cpu-no-traefik:
+    <<: *noobscribe-worker-common
+    profiles: ["cpu-no-traefik"]
+    image: ${NOOBSCRIBE_IMAGE:-ghcr.io/meganoob1337/noobscribe:latest-cpu}
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: Dockerfile.cpu
+    container_name: noobscribe-worker-cpu-no-traefik
+    environment:
+      - FORCE_CPU=${FORCE_CPU:-1}
+      - DEBUG=${DEBUG:-0}
+      - ENABLE_DIARIZATION=${ENABLE_DIARIZATION:-true}
+      - INCLUDE_DIARIZATION_IN_TEXT=${INCLUDE_DIARIZATION_IN_TEXT:-true}
+      - USE_API=${USE_API:-0}
+      - STT_BASE_URL=${STT_BASE_URL:-}
+      - STT_API_KEY=${STT_API_KEY:-}
+      - MODEL_ID=${MODEL_ID:-nvidia/canary-1b-v2}
+      - MODEL_PATH=${MODEL_PATH:-}
+      - DIARIZATION_MODEL_PATH=${DIARIZATION_MODEL_PATH:-}
+      - TEMPERATURE=${TEMPERATURE:-0.0}
+      - CHUNK_DURATION=${CHUNK_DURATION:-10}
+      - HUGGINGFACE_ACCESS_TOKEN=${HUGGINGFACE_TOKEN:-}
+      - CHROMADB_PATH=/app/data/speakers
+      - RECORDINGS_PATH=/app/data/recordings
+      - DATABASE_URL=sqlite+aiosqlite:////app/data/noobscribe.db
+      - REDIS_URL=redis://redis:6379/0
+      - QUEUE_TRANSCRIPTION=${QUEUE_TRANSCRIPTION:-1}
 
 networks:
   traefik-global-proxy:

@@ -64,6 +64,8 @@ Stop:
 docker compose down
 ```
 
+Each profile starts **`redis`**, the **API** container (`SKIP_MODEL_LOAD=1`, no NeMo in-process), and a matching **worker** container (`python -m workers.run`, loads ASR + diarization). Transcription requests return `202` immediately; the worker updates job status in SQLite and reports chunk progress.
+
 The default [docker-compose.yml](docker-compose.yml) mode uses the `traefik` profile from `.env` (`COMPOSE_PROFILES=traefik`), running **GPU + Traefik** with no host port publish. Use `--profile no-traefik` (GPU) or `--profile cpu-no-traefik` (CPU) for direct host publish via `NOOBSCRIBE_PUBLISH_PORT`.
 
 ## Manual image build

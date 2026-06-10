@@ -12,7 +12,7 @@ Use case: run a zero-install transcription workflow from the browser - upload me
 
 ## Features
 
-- Whisper-compatible `POST /v1/audio/transcriptions` (json, text, srt, vtt, verbose_json)
+- Whisper-compatible `POST /v1/audio/transcriptions` (json, text, srt, vtt, verbose_json), queued via **Redis + RQ workers**
 - Segment timestamps; optional word timestamps and diarization
 - **Speaker embedding memory** ([**Chroma**](https://www.trychroma.com/)) with display names and re-matching across stored transcripts
 - **Recording library** ([**SQLAlchemy**](https://www.sqlalchemy.org/) + SQLite + on-disk audio) and **Web UI** at `/ui` (transcript view: per-segment play/pause via `GET /v1/audio/snippet`, streams only on play)
@@ -47,7 +47,7 @@ The built-in UI at `/ui` is a single-page app for managing recordings, transcrip
 - **Recordings library:** paginated recordings list, responsive table/cards, and quick navigation to details.
 - **Upload flow:** upload audio file with optional recording name and immediate redirect to the created recording.
 - **Browser recording:** capture microphone and/or tab/window audio, live level meters, preview, upload, and discard. In Chrome or Edge, a floating picture-in-picture window shows recording time and mute/stop controls while you work in other apps.
-- **Recording detail:** rename recordings, play original audio, run transcription jobs with diarization/word timestamp options, and review prior transcription runs.
+- **Recording detail:** rename recordings, play original audio, queue transcription jobs (with chunk-level progress while a worker runs), and review prior transcription runs.
 - **Transcript viewer:** formatted transcript display, per-segment snippet playback, `.txt` download, and save detected speaker embeddings.
 - **Speaker management:** list/delete speakers, add embeddings from snippet extraction or manual vector input, inspect embedding snippets, and delete individual embeddings.
 
@@ -77,18 +77,20 @@ Set **`NOOBSCRIBE_IMAGE`** in `.env` if you use a fork or a pinned digest/tag (s
 
 Data persists under `./data` (mounted in Compose). Hugging Face cache can live under `./huggingface`.
 
+Compose starts **three** services per profile: **`redis`**, **`noobscribe-api`** (HTTP only, no ASR model loaded), and **`noobscribe-worker`** (consumes transcription jobs). The API stays responsive while long transcriptions run in the worker container.
+
 Copy **[env.example](env.example)** to `.env` and adjust values (Compose loads `.env` automatically; never commit secrets).
 
 See **[DOCKER_README.md](DOCKER_README.md)** for environment variables, **Traefik + TLS**, and manual `docker run` examples.
 
 ### Compose profile matrix
 
-| Mode | Command | Traefik | GPU | Host port publish |
-|------|---------|---------|-----|-------------------|
-| Default | `docker compose up -d` | Yes | Yes | No |
-| CPU + Traefik | `docker compose --profile cpu up -d` | Yes | No | No |
-| GPU + no Traefik | `docker compose --profile no-traefik up -d` | No | Yes | Yes (`NOOBSCRIBE_PUBLISH_PORT`) |
-| CPU + no Traefik | `docker compose --profile cpu-no-traefik up -d` | No | No | Yes (`NOOBSCRIBE_PUBLISH_PORT`) |
+| Mode | Command | Traefik | GPU | Host port publish | Worker service |
+|------|---------|---------|-----|-------------------|----------------|
+| Default | `docker compose up -d` | Yes | Yes | No | `noobscribe-worker` |
+| CPU + Traefik | `docker compose --profile cpu up -d` | Yes | No | No | `noobscribe-worker-cpu` |
+| GPU + no Traefik | `docker compose --profile no-traefik up -d` | No | Yes | Yes (`NOOBSCRIBE_PUBLISH_PORT`) | `noobscribe-worker-no-traefik` |
+| CPU + no Traefik | `docker compose --profile cpu-no-traefik up -d` | No | No | Yes (`NOOBSCRIBE_PUBLISH_PORT`) | `noobscribe-worker-cpu-no-traefik` |
 
 **Traefik (default):** `docker compose up -d` uses the default `traefik` profile from `.env` (`COMPOSE_PROFILES=traefik`), which runs GPU + Traefik with no host port publish. Set `NOOBSCRIBE_HOST` and `TRAEFIK_NETWORK` in `.env` (see `env.example`). Full steps in **DOCKER_README.md**.
 
@@ -111,10 +113,19 @@ pip install -r requirements.txt
 
 Set `HUGGINGFACE_ACCESS_TOKEN` if you use Hugging Face for diarization (or set `DIARIZATION_MODEL_PATH` for offline pyannote). **Pyannote-audio** models on Hugging Face are **gated**: sign in, open each model card you need (for example the default [speaker-diarization-community-1](https://huggingface.co/pyannote/speaker-diarization-community-1) pipeline), and **accept the access terms** on the card before downloads will succeed with your token.
 
+Transcription requires **Redis** and a **worker** in addition to the API:
+
 ```bash
-./run.sh --hf-token "your_token"    # optional
+redis-server   # or: docker run -p 6379:6379 redis:7-alpine
+
+# Terminal 2 — worker (loads ASR model)
+source venv/bin/activate
+python -m workers.run
+
+# Terminal 3 — API (skips model load)
+SKIP_MODEL_LOAD=1 ./run.sh --hf-token "your_token"    # optional
 # or
-./run.sh --port 8000
+SKIP_MODEL_LOAD=1 ./run.sh --port 8000
 ```
 
 ## Configuration (high level)
@@ -135,6 +146,9 @@ Set `HUGGINGFACE_ACCESS_TOKEN` if you use Hugging Face for diarization (or set `
 | `CHUNK_DURATION` | `20` | Chunk length (seconds) for long files |
 | `SPEAKER_SIMILARITY_THRESHOLD` | `0.7` | Cosine similarity for speaker match |
 | `FORCE_CPU` | _(unset)_ | When `1`/`true`/`yes`, use CPU for ASR, diarization, and language ID even if CUDA is available; **Dockerfile.cpu** sets this by default |
+| `REDIS_URL` | `redis://redis:6379/0` | Redis connection for the transcription job queue |
+| `QUEUE_TRANSCRIPTION` | `1` | When `0`, enqueue endpoints return `503` |
+| `SKIP_MODEL_LOAD` | unset (`1` in Docker API) | API skips NeMo load; run `python -m workers.run` for transcription |
 
 **Gated Pyannote models:** The **pyannote-audio** checkpoints used for diarization (including the default pipeline and any sub-models it pulls) are hosted on Hugging Face under **gated** repositories. Create a [Hugging Face access token](https://huggingface.co/settings/tokens), then visit each required model page while logged in and **accept the user conditions** (e.g. “Agree and access repository”). Until you do, `huggingface_hub` may return access errors even with a valid token.
 

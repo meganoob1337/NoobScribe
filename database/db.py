@@ -65,6 +65,10 @@ def _ensure_hide_in_recordings_column_sync(sync_conn) -> None:
         )
 
 
+def _ensure_sqlite_wal_sync(sync_conn) -> None:
+    sync_conn.execute(text("PRAGMA journal_mode=WAL"))
+
+
 async def init_db() -> None:
     """Create tables if they do not exist."""
     if _engine is None:
@@ -77,6 +81,7 @@ async def init_db() -> None:
         url = str(_engine.url)
         if "sqlite" in url:
             await conn.run_sync(_ensure_hide_in_recordings_column_sync)
+            await conn.run_sync(_ensure_sqlite_wal_sync)
 
 
 async def get_session() -> AsyncGenerator[AsyncSession, None]:

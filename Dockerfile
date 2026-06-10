@@ -25,7 +25,8 @@ RUN python3 -m venv venv
 RUN . venv/bin/activate && pip install --upgrade pip
 RUN --mount=type=cache,target=/root/.cache/pip \
     . venv/bin/activate && pip install -r requirements.txt \
-    --extra-index-url https://download.pytorch.org/whl/cu130
+    --index-url https://download.pytorch.org/whl/cu130 \
+    --extra-index-url https://pypi.org/simple
 
 RUN --mount=type=cache,target=/root/.cache/pip \
     . venv/bin/activate && pip install --upgrade --force-reinstall \

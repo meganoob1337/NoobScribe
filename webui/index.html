@@ -96,6 +96,17 @@
           </span>
           Speakers
         </button>
+        <button
+          type="button"
+          @click="go('/jobs')"
+          class="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium transition-colors"
+          :class="navActive('jobs') ? 'border border-violet-500/30 bg-violet-500/10 text-violet-100' : 'border border-transparent text-slate-400 hover:bg-slate-800/70 hover:text-white'"
+        >
+          <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-800/80 text-slate-300" aria-hidden="true">
+            <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 10h16M4 14h10M4 18h6" /></svg>
+          </span>
+          Jobs
+        </button>
         <a
           href="/docs"
           @click="navOpen = false"
@@ -346,7 +357,27 @@
                 </label>
               </div>
             </div>
-            <button type="button" @click="runTranscribe()" :disabled="transcribeBusy" class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-medium" x-text="transcribeBusy ? 'Running…' : 'Run transcription'"></button>
+            <div class="flex flex-wrap items-center gap-3">
+              <button type="button" @click="runTranscribe()" :disabled="transcribeBusy" class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-medium" x-text="transcribeBusy ? 'Running…' : 'Run transcription'"></button>
+              <p x-show="transcribeProgress" class="text-sm text-slate-400" x-text="transcribeProgress"></p>
+            </div>
+          </div>
+          <div x-show="activeRecordingJobs().length || recordingJobsLoading" class="p-4 rounded-xl border border-slate-800 bg-slate-900/50 space-y-3">
+            <h3 class="text-white font-medium">Active jobs</h3>
+            <p x-show="recordingJobsError" class="text-red-400 text-sm" x-text="recordingJobsError"></p>
+            <p x-show="recordingJobsLoading && !activeRecordingJobs().length" class="text-slate-500 text-sm">Loading jobs…</p>
+            <ul class="space-y-2">
+              <template x-for="job in activeRecordingJobs()" :key="job.job_id">
+                <li class="flex flex-wrap items-center gap-3 px-4 py-3 rounded-lg border border-slate-800 bg-slate-950/50 text-sm">
+                  <span class="inline-flex px-2 py-0.5 rounded text-xs font-medium"
+                    :class="job.status === 'running' ? 'bg-indigo-900/50 text-indigo-200' : 'bg-slate-800 text-slate-300'"
+                    x-text="formatJobStatus(job.status)"></span>
+                  <span class="text-slate-400" x-text="formatJobType(job.job_type)"></span>
+                  <span class="text-slate-500 flex-1 min-w-0" x-text="formatJobProgress(job)"></span>
+                  <button type="button" @click="cancelJob(job.job_id, 'recording')" class="px-3 py-1 rounded-lg text-xs bg-red-900/40 text-red-200 border border-red-800 hover:bg-red-900/60">Cancel</button>
+                </li>
+              </template>
+            </ul>
           </div>
           <div>
             <h3 class="text-sm font-medium text-slate-400 mb-2">Stored transcriptions</h3>
@@ -365,6 +396,63 @@
           <button type="button" @click="deleteRecording()" class="text-sm text-red-400 hover:text-red-300">Delete recording</button>
         </div>
       </template>
+    </section>
+
+    <!-- Jobs -->
+    <section x-show="route.name === 'jobs'" x-cloak class="space-y-5">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 class="text-xl font-semibold text-white">Transcription jobs</h2>
+          <p class="text-sm text-slate-500 mt-1">Queued and running jobs, plus recent history while retained in Redis.</p>
+        </div>
+        <button type="button" @click="loadAllJobs()" :disabled="jobsLoading" class="px-3 py-2 rounded-lg bg-slate-800 text-sm text-slate-300 border border-slate-600 hover:bg-slate-700 disabled:opacity-50">Refresh</button>
+      </div>
+      <p x-show="jobsLoading && !allJobs.length" class="text-slate-500">Loading…</p>
+      <p x-show="jobsError" class="text-red-400 text-sm" x-text="jobsError"></p>
+      <p x-show="!jobsLoading && !allJobs.length && !jobsError" class="text-slate-500 text-sm">No jobs to show.</p>
+      <div x-show="allJobs.length" class="overflow-x-auto rounded-xl border border-slate-800">
+        <table class="w-full text-sm text-left">
+          <thead class="bg-slate-900/80 text-slate-400 text-xs uppercase tracking-wide">
+            <tr>
+              <th class="px-4 py-3">Created</th>
+              <th class="px-4 py-3">Type</th>
+              <th class="px-4 py-3">Status</th>
+              <th class="px-4 py-3">Recording</th>
+              <th class="px-4 py-3">Progress</th>
+              <th class="px-4 py-3">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <template x-for="job in allJobs" :key="job.job_id">
+              <tr class="border-t border-slate-800 hover:bg-slate-900/40">
+                <td class="px-4 py-3 text-slate-300 whitespace-nowrap" x-text="formatDate(job.created_at)"></td>
+                <td class="px-4 py-3 text-slate-400" x-text="formatJobType(job.job_type)"></td>
+                <td class="px-4 py-3">
+                  <span class="inline-flex px-2 py-0.5 rounded text-xs font-medium"
+                    :class="{
+                      'bg-indigo-900/50 text-indigo-200': job.status === 'running',
+                      'bg-slate-800 text-slate-300': job.status === 'queued',
+                      'bg-green-900/40 text-green-200': job.status === 'completed',
+                      'bg-red-900/40 text-red-200': job.status === 'failed' || job.status === 'cancelled'
+                    }"
+                    x-text="formatJobStatus(job.status)"></span>
+                </td>
+                <td class="px-4 py-3">
+                  <template x-if="job.recording_id">
+                    <button type="button" @click="go('/r/' + job.recording_id)" class="text-indigo-300 hover:text-indigo-200" x-text="job.recording_name || job.recording_id"></button>
+                  </template>
+                  <span x-show="!job.recording_id" class="text-slate-600">—</span>
+                </td>
+                <td class="px-4 py-3 text-slate-500 max-w-xs truncate" x-text="formatJobProgress(job)"></td>
+                <td class="px-4 py-3 whitespace-nowrap space-x-2">
+                  <button type="button" x-show="job.cancellable" @click="cancelJob(job.job_id, 'all')" class="px-2 py-1 rounded text-xs bg-red-900/40 text-red-200 border border-red-800 hover:bg-red-900/60">Cancel</button>
+                  <button type="button" x-show="job.status === 'completed' && job.transcription_id && job.recording_id" @click="go('/r/' + job.recording_id + '/t/' + job.transcription_id)" class="px-2 py-1 rounded text-xs bg-slate-800 text-slate-300 border border-slate-600 hover:bg-slate-700">View transcript</button>
+                </td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
     </section>
 
     <!-- Transcript viewer -->
@@ -569,8 +657,9 @@
               <audio :src="spExtractUrl" controls class="w-full max-w-xl"></audio>
             </div>
             <p x-show="extractError" class="text-red-400 text-sm" x-text="extractError"></p>
-            <div class="flex flex-wrap gap-2">
+            <div class="flex flex-wrap gap-2 items-center">
               <button type="button" @click="runExtractFromAudio()" :disabled="extractBusy" class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm" x-text="extractBusy ? 'Processing…' : 'Extract speaker embeddings'"></button>
+              <p x-show="extractProgress" class="text-sm text-slate-400" x-text="extractProgress"></p>
               <button type="button" @click="clearExtractResult()" x-show="extractResult" class="px-3 py-2 rounded-lg bg-slate-800 text-sm text-slate-300 border border-slate-600">Dismiss results</button>
             </div>
             <template x-if="extractResult">

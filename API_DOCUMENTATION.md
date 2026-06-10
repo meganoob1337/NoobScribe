@@ -15,13 +15,87 @@ Currently, the API does not require authentication.
 - **Multipart Form Data**: Used for file uploads (audio transcription)
 - **JSON**: Used for JSON request/response bodies (speaker management)
 
+## Async transcription jobs
+
+Transcription work runs in a **background worker** (Redis + [RQ](https://python-rq.org/)), not in the API process. All transcription entry points return **`202 Accepted`** immediately with a job id; poll for status and results.
+
+**Queue a job** → one of:
+
+- `POST /v1/audio/transcriptions`
+- `POST /v1/recordings/{recording_id}/transcribe`
+- `POST /v1/speakers/extract-from-audio`
+
+**202 response:**
+
+```json
+{
+  "job_id": "uuid",
+  "status": "queued",
+  "recording_id": "uuid-or-null"
+}
+```
+
+**Poll status:** `GET /v1/transcription-jobs/{job_id}`
+
+```json
+{
+  "job_id": "uuid",
+  "job_type": "recording_transcribe",
+  "status": "queued",
+  "recording_id": "uuid",
+  "transcription_id": null,
+  "progress_stage": "transcribing",
+  "progress_current": 3,
+  "progress_total": 10,
+  "error_message": null,
+  "result": null,
+  "created_at": "2026-06-10T12:00:00+00:00",
+  "started_at": "2026-06-10T12:00:01+00:00",
+  "completed_at": null
+}
+```
+
+**Status values:** `queued`, `running`, `completed`, `failed`, `cancelled`.
+
+**Progress stages:** `preparing`, `diarization`, `transcribing`, `completed`, `cancelled`. During `transcribing`, `progress_current` / `progress_total` are the chunk index and chunk count.
+
+**TranscriptionJobResponse** also includes:
+
+- `recording_name` (string, optional): display name when `recording_id` is set
+- `cancellable` (boolean): `true` when `status` is `queued` or `running`
+
+When `status` is `completed`:
+
+- **Stored recording jobs** (`recording_transcribe`, `speaker_extract`): `transcription_id` is set; `result` contains the verbose transcript payload (same shape as the former synchronous response, including `stored: true` for library transcriptions).
+- **OpenAI-style upload** (`openai_transcribe`): `result` contains the formatted transcript for the requested `response_format` (no SQLite row).
+
+**List jobs for a recording:** `GET /v1/recordings/{recording_id}/transcription-jobs`
+
+**List all visible jobs:** `GET /v1/transcription-jobs?limit=50&offset=0`
+
+Returns queued and running jobs, plus completed/failed/cancelled jobs **only while the linked RQ job metadata still exists in Redis** (same TTL as enqueue: 24h by default). Older finished jobs drop off the list automatically.
+
+**Cancel a job:** `POST /v1/transcription-jobs/{job_id}/cancel`
+
+Only `queued` and `running` jobs can be cancelled (`409` otherwise). Sets `status` to `cancelled`. Running jobs stop cooperatively between pipeline chunks (SimpleWorker).
+
+**Health:** `GET /health` includes `queue_enabled` and `redis_ok`.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `REDIS_URL` | `redis://redis:6379/0` | Redis connection for the job queue |
+| `QUEUE_TRANSCRIPTION` | `1` | When `0`, transcription enqueue returns `503` |
+| `SKIP_MODEL_LOAD` | unset (`1` in Docker API) | API container skips loading NeMo; workers load the model |
+
 ## Endpoints
 
 ### 1. Transcribe Audio
 
-Transcribe an audio file with optional speaker diarization. **ASR backend:** by default this uses **local NVIDIA NeMo** (default: Canary 1B v2). When the server is configured with **`USE_API=1`**, each audio chunk is sent to a **remote OpenAI-compatible** `POST …/audio/transcriptions` endpoint (`STT_BASE_URL` + `STT_API_KEY`); **`MODEL_ID`** is passed as the remote `model` name. Diarization, language ID, and merging behavior are unchanged in both modes.
+Queue transcription of an uploaded audio file with optional speaker diarization. **ASR backend:** by default a worker uses **local NVIDIA NeMo** (default: Canary 1B v2). When **`USE_API=1`**, each audio chunk is sent to a **remote OpenAI-compatible** `POST …/audio/transcriptions` endpoint (`STT_BASE_URL` + `STT_API_KEY`); **`MODEL_ID`** is passed as the remote `model` name. Diarization, language ID, and merging behavior are unchanged in both modes.
 
 **Endpoint:** `POST /v1/audio/transcriptions`
+
+**Status:** `202 Accepted` — returns `{ "job_id", "status": "queued" }`. Poll `GET /v1/transcription-jobs/{job_id}` for the transcript in `result` when `status` is `completed`.
 
 **Content-Type:** `multipart/form-data`
 
@@ -482,9 +556,11 @@ Return the nearest stored speaker **embeddings** (individual Chroma rows) to a q
 
 ### 5. Extract speaker embeddings from audio
 
-Upload a short audio clip in one step: the server stores it as a **recording** with `hide_in_recordings=true` (so it does **not** appear in `GET /v1/recordings`), runs the same transcription + optional diarization pipeline as stored recording transcribe, **persists** a `TranscriptionResult`, and returns diarized **speaker rows with `embedding` vectors** (for enrolling via `POST`/`PUT` `/v1/speakers`). Persisted data enables embedding snippet previews (`GET /v1/speakers/{id}/embeddings/{index}/snippets`) the same way as normal library recordings.
+Upload a short audio clip: the server stores it as a **recording** with `hide_in_recordings=true` (so it does **not** appear in `GET /v1/recordings`), then **queues** the same transcription + optional diarization pipeline as stored recording transcribe. When the job completes, a `TranscriptionResult` is persisted and **`result`** contains diarized **speaker rows with `embedding` vectors** (for enrolling via `POST`/`PUT` `/v1/speakers`). Persisted data enables embedding snippet previews (`GET /v1/speakers/{id}/embeddings/{index}/snippets`) the same way as normal library recordings.
 
 **Endpoint:** `POST /v1/speakers/extract-from-audio`
+
+**Status:** `202 Accepted` — `{ "job_id", "status": "queued", "recording_id" }`. Poll the job endpoint for `result` when complete.
 
 **Content-Type:** `multipart/form-data`
 
@@ -500,9 +576,9 @@ Upload a short audio clip in one step: the server stores it as a **recording** w
 | `diarize` | boolean | No | Default `true` |
 | `include_diarization_in_text` | boolean | No | Optional |
 
-**Response (json / verbose_json):** Same fields as a successful stored `POST /v1/recordings/{recording_id}/transcribe` response, plus **`recording_id`** (UUID of the hidden recording).
+**Completed job `result` (json / verbose_json):** Same fields as a successful stored `POST /v1/recordings/{recording_id}/transcribe` response, plus **`recording_id`** (UUID of the hidden recording).
 
-**Status codes:** `200`, `400`, `500`, `503` (model not loaded).
+**Status codes:** `202` (queued), `400`, `500`, `503` (Redis unavailable or queue disabled).
 
 ---
 
@@ -908,18 +984,56 @@ Deletes the row, cascades stored transcriptions, and removes the audio file from
 
 **Content-Type:** `multipart/form-data`
 
+**Status:** `202 Accepted` — `{ "job_id", "status": "queued", "recording_id" }`.
+
 Same form fields as `POST /v1/audio/transcriptions` except **no** `file`: `language`, `response_format`, `temperature`, `timestamps`, `word_timestamps`, `diarize`, `include_diarization_in_text`.
 
-Persists a **TranscriptionResult** (segments + speakers JSON). For `json` / `verbose_json`, the response body includes extra fields:
+When the job completes, the worker persists a **TranscriptionResult** (segments + speakers JSON). For `json` / `verbose_json`, **`result`** includes:
 
 - `transcription_id` (string): ID of the stored row
 - `stored` (boolean): `true`
 
-Other formats (`text`, `srt`, `vtt`) return plain text as today.
+Other formats (`text`, `srt`, `vtt`) place plain text in `result.text` (and `result.format` for srt/vtt).
 
 ---
 
-### 16. List transcriptions for a recording
+### 15b. List transcription jobs for a recording
+
+**Endpoint:** `GET /v1/recordings/{recording_id}/transcription-jobs`
+
+**Response:** `{ "object": "list", "data": [ TranscriptionJobResponse ] }`
+
+---
+
+### 16. List all transcription jobs
+
+**Endpoint:** `GET /v1/transcription-jobs`
+
+**Query:** `limit` (default 50, max 200), `offset` (default 0)
+
+**Response:** `{ "object": "list", "data": [ TranscriptionJobResponse ] }` — filtered to [visible jobs](#async-transcription-jobs) (active + historic while in Redis).
+
+---
+
+### 17. Get transcription job status
+
+**Endpoint:** `GET /v1/transcription-jobs/{job_id}`
+
+**Response:** `TranscriptionJobResponse` (see [Async transcription jobs](#async-transcription-jobs)).
+
+---
+
+### 18. Cancel transcription job
+
+**Endpoint:** `POST /v1/transcription-jobs/{job_id}/cancel`
+
+**Response:** Updated `TranscriptionJobResponse` with `status: "cancelled"`.
+
+**Status codes:** `200`, `404`, `409` (not cancellable).
+
+---
+
+### 19. List transcriptions for a recording
 
 **Endpoint:** `GET /v1/recordings/{recording_id}/transcriptions`
 
@@ -929,7 +1043,7 @@ Other formats (`text`, `srt`, `vtt`) return plain text as today.
 
 ---
 
-### 17. Get one stored transcription
+### 20. Get one stored transcription
 
 **Endpoint:** `GET /v1/recordings/{recording_id}/transcriptions/{transcription_id}`
 
@@ -969,6 +1083,9 @@ Other useful paths:
 | `STT_BASE_URL` | _(unset)_ | OpenAI-compatible API base URL (e.g. `https://api.openai.com/v1`). Required when `USE_API` is set. |
 | `STT_API_KEY` | _(unset)_ | Bearer token for the STT API. Required when `USE_API` is set. |
 | `MODEL_ID` | `nvidia/canary-1b-v2` | In **API mode**, reused as the remote **`model`** name (e.g. `whisper-1`). |
+| `REDIS_URL` | `redis://redis:6379/0` | Redis URL for the transcription job queue |
+| `QUEUE_TRANSCRIPTION` | `1` | Enable async job queue (`0` disables enqueue) |
+| `SKIP_MODEL_LOAD` | unset | When `1`, API process does not load NeMo (Docker API sets this; workers load models) |
 
 ---
 

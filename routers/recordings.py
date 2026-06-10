@@ -10,7 +10,7 @@ from typing import List, Optional
 
 import anyio
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import FileResponse, JSONResponse
 from starlette.types import Receive, Scope, Send
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,14 +25,15 @@ from models import (
     RecordingListResponse,
     RecordingResponse,
     RecordingUpdate,
+    TranscriptionJobCreateResponse,
+    TranscriptionJobListResponse,
+    TranscriptionJobResponse,
     TranscriptionResultListResponse,
     TranscriptionResultResponse,
 )
-from services.stored_recording_transcribe import (
-    persist_pipeline_transcription,
-    run_transcription_for_recording_path,
-    transcription_response_json_body,
-)
+from database.models import TranscriptionJob as TranscriptionJobORM
+from services.transcription_enqueue import build_transcribe_params, enqueue_recording_transcription
+from services.transcription_jobs import job_to_dict
 
 
 class FullRecordingFileResponse(FileResponse):
@@ -68,22 +69,6 @@ class FullRecordingFileResponse(FileResponse):
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/recordings", tags=["recordings"])
-
-
-def _require_asr_model():
-    import api as api_module
-
-    cfg = get_config()
-    if api_module.asr_model is None and not getattr(cfg, "use_api", False):
-        raise HTTPException(status_code=503, detail="Model not loaded yet. Please try again in a few moments.")
-    return api_module.asr_model
-
-
-def _speaker_db():
-    import api as api_module
-
-    api_module.init_speaker_db()
-    return api_module.speaker_db
 
 
 def _orm_recording_to_response(
@@ -287,7 +272,11 @@ async def get_recording_audio(recording_id: str, session: AsyncSession = Depends
     )
 
 
-@router.post("/{recording_id}/transcribe")
+@router.post(
+    "/{recording_id}/transcribe",
+    response_model=TranscriptionJobCreateResponse,
+    status_code=202,
+)
 async def transcribe_recording(
     recording_id: str,
     language: Optional[str] = Form(None),
@@ -300,59 +289,53 @@ async def transcribe_recording(
     session: AsyncSession = Depends(get_session),
 ):
     _ = temperature  # accepted for API parity; NeMo path does not use it here
-    cfg = get_config()
     rec = await session.get(RecordingORM, recording_id)
     if not rec:
         raise HTTPException(status_code=404, detail="Recording not found")
     if not rec.file_path or not os.path.exists(rec.file_path):
         raise HTTPException(status_code=404, detail="Audio file not found on disk")
 
-    asr_model = _require_asr_model()
-    speaker_db = _speaker_db()
-
     try:
-        pr = run_transcription_for_recording_path(
-            rec.file_path,
-            asr_model,
-            cfg,
-            speaker_db,
+        params = build_transcribe_params(
             language=language,
+            response_format=response_format,
+            timestamps=timestamps,
             word_timestamps=word_timestamps,
             diarize=diarize,
             include_diarization_in_text=include_diarization_in_text,
-            response_format=response_format,
-            timestamps=timestamps,
+            temperature=temperature,
         )
+        job_id = await enqueue_recording_transcription(session, recording_id, params)
+        return TranscriptionJobCreateResponse(
+            job_id=job_id,
+            status="queued",
+            recording_id=recording_id,
+        )
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error("Transcription failed for recording %s: %s", recording_id, e)
+        logger.error("Failed to queue transcription for recording %s: %s", recording_id, e)
         raise HTTPException(status_code=500, detail=str(e))
 
-    tid = await persist_pipeline_transcription(
-        session,
-        rec,
-        pr,
-        diarize=diarize,
-        word_timestamps=word_timestamps,
+
+@router.get("/{recording_id}/transcription-jobs", response_model=TranscriptionJobListResponse)
+async def list_recording_transcription_jobs(
+    recording_id: str,
+    session: AsyncSession = Depends(get_session),
+):
+    rec = await session.get(RecordingORM, recording_id)
+    if not rec:
+        raise HTTPException(status_code=404, detail="Recording not found")
+    q = (
+        select(TranscriptionJobORM)
+        .where(TranscriptionJobORM.recording_id == recording_id)
+        .order_by(TranscriptionJobORM.created_at.desc())
     )
-
-    def _json_body() -> dict:
-        return transcription_response_json_body(pr, tid)
-
-    if response_format == "json":
-        return _json_body()
-    if response_format == "text":
-        return PlainTextResponse(pr.response.text)
-    if response_format == "srt":
-        from transcription import format_srt
-
-        return PlainTextResponse(format_srt(pr.all_segments))
-    if response_format == "vtt":
-        from transcription import format_vtt
-
-        return PlainTextResponse(format_vtt(pr.all_segments))
-    if response_format == "verbose_json":
-        return _json_body()
-    raise HTTPException(status_code=400, detail=f"Unsupported response format: {response_format}")
+    res = await session.execute(q)
+    rows = list(res.scalars().all())
+    return TranscriptionJobListResponse(
+        data=[TranscriptionJobResponse(**job_to_dict(r, recording_name=rec.name)) for r in rows]
+    )
 
 
 @router.get("/{recording_id}/transcriptions", response_model=TranscriptionResultListResponse)

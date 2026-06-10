@@ -7,7 +7,7 @@ import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any, Callable, List, Optional
 
 from models import SpeakerInfo, TranscriptionResponse, WhisperSegment
 from audio import split_audio_into_chunks
@@ -41,6 +41,7 @@ def run_transcription_pipeline(
     include_diarization_in_text: Optional[bool] = None,
     response_format: str = "json",
     timestamps: bool = False,
+    on_progress: Callable[[str, int, int], None] | None = None,
 ) -> PipelineRunResult:
     """
     Transcribe ``wav_file`` (16 kHz mono WAV). Optionally diarize on full file.
@@ -52,6 +53,10 @@ def run_transcription_pipeline(
 
     chunk_duration = config.chunk_duration
     audio_chunks = split_audio_into_chunks(wav_file, chunk_duration=chunk_duration)
+    total_chunks = len(audio_chunks)
+
+    if on_progress:
+        on_progress("preparing", 0, total_chunks)
 
     diarizer = None
     if diarize:
@@ -66,9 +71,13 @@ def run_transcription_pipeline(
 
     diarization_result = None
     if diarizer and getattr(diarizer, "pipeline", None) is not None:
+        if on_progress:
+            on_progress("diarization", 0, 1)
         logger.info("Performing speaker diarization")
         diarization_result = diarizer.diarize(wav_file, return_embeddings=True)
         logger.info("Diarization found %s speakers", diarization_result.num_speakers)
+        if on_progress:
+            on_progress("diarization", 1, 1)
     elif diarize:
         logger.warning("Diarization requested but pipeline is not available")
 
@@ -91,7 +100,9 @@ def run_transcription_pipeline(
     all_segments: List[WhisperSegment] = []
 
     for i, chunk_path in enumerate(audio_chunks):
-        logger.info("Processing chunk %s/%s", i + 1, len(audio_chunks))
+        if on_progress:
+            on_progress("transcribing", i + 1, total_chunks)
+        logger.info("Processing chunk %s/%s", i + 1, total_chunks)
         if getattr(config, "use_api", False):
             chunk_text, chunk_segments = transcribe_api_chunk(
                 chunk_path,

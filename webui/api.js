@@ -116,6 +116,57 @@
       }).then(handle);
     },
 
+    getTranscriptionJob(jobId) {
+      return fetch(
+        apiBase() + "/v1/transcription-jobs/" + encodeURIComponent(jobId)
+      ).then(handle);
+    },
+
+    async pollTranscriptionJob(jobId, opts) {
+      opts = opts || {};
+      const intervalMs = opts.intervalMs != null ? opts.intervalMs : 2000;
+      const onProgress = opts.onProgress;
+      while (true) {
+        const job = await this.getTranscriptionJob(jobId);
+        if (onProgress) onProgress(job);
+        if (
+          job.status === "completed" ||
+          job.status === "failed" ||
+          job.status === "cancelled"
+        ) {
+          return job;
+        }
+        await new Promise(function (r) {
+          setTimeout(r, intervalMs);
+        });
+      }
+    },
+
+    listTranscriptionJobs(opts) {
+      opts = opts || {};
+      const q = new URLSearchParams();
+      if (opts.limit != null) q.set("limit", String(opts.limit));
+      if (opts.offset != null) q.set("offset", String(opts.offset));
+      const s = q.toString();
+      return fetch(apiBase() + "/v1/transcription-jobs" + (s ? "?" + s : "")).then(handle);
+    },
+
+    listRecordingJobs(recordingId) {
+      return fetch(
+        apiBase() +
+          "/v1/recordings/" +
+          encodeURIComponent(recordingId) +
+          "/transcription-jobs"
+      ).then(handle);
+    },
+
+    cancelTranscriptionJob(jobId) {
+      return fetch(
+        apiBase() + "/v1/transcription-jobs/" + encodeURIComponent(jobId) + "/cancel",
+        { method: "POST" }
+      ).then(handle);
+    },
+
     listTranscriptions(recordingId) {
       return fetch(
         apiBase() + "/v1/recordings/" + encodeURIComponent(recordingId) + "/transcriptions"

@@ -37,17 +37,20 @@ from models import (
     SpeakerRematchResponse,
     SpeakerResponse,
     SpeakerUpdate,
+    TranscriptionJobCreateResponse,
 )
+from routers.jobs import router as jobs_router
 from routers.recordings import router as recordings_router
+from services.job_queue import check_redis_connection
+from services.transcription_enqueue import (
+    build_transcribe_params,
+    enqueue_openai_transcription,
+    enqueue_recording_transcription,
+)
+from services.transcription_jobs import JOB_TYPE_SPEAKER_EXTRACT
 from services.rematch_stored_transcriptions import rematch_all_stored_transcriptions
 from services.speaker_embedding_snippets import collect_snippets_for_enrolled_embedding
-from services.stored_recording_transcribe import (
-    persist_pipeline_transcription,
-    run_transcription_for_recording_path,
-    transcription_response_json_body,
-)
-from services.transcription_pipeline import run_transcription_pipeline
-from transcription import format_srt, format_vtt, load_model
+from transcription import load_model
 
 # Initialize logging
 logger = logging.getLogger(__name__)
@@ -145,6 +148,12 @@ def create_app() -> FastAPI:
                     config.stt_base_url,
                     model_id,
                 )
+            elif config.queue_enabled or config.skip_model_load:
+                asr_model = None
+                logger.info(
+                    "API skipping ASR model load (transcription handled by workers; queue_enabled=%s)",
+                    config.queue_enabled,
+                )
             else:
                 asr_model = load_model(model_id, model_path=config.model_path)
                 logger.info("ASR model loaded (%s)", config.model_path or model_id)
@@ -176,6 +185,7 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(recordings_router, prefix="/v1")
+    app.include_router(jobs_router, prefix="/v1")
 
     @app.get("/", include_in_schema=False)
     async def root_redirect_to_ui():
@@ -186,7 +196,11 @@ def create_app() -> FastAPI:
     if webui_root.is_dir():
         app.mount("/ui", WebUiStaticFiles(directory=str(webui_root), html=True), name="ui")
 
-    @app.post("/v1/audio/transcriptions")
+    @app.post(
+        "/v1/audio/transcriptions",
+        response_model=TranscriptionJobCreateResponse,
+        status_code=202,
+    )
     async def transcribe_audio(
         file: UploadFile = File(...),
         model: str = Form("whisper-1"),
@@ -200,93 +214,53 @@ def create_app() -> FastAPI:
         word_timestamps: bool = Form(False),
         diarize: bool = Form(True),
         include_diarization_in_text: Optional[bool] = Form(None),
+        session: AsyncSession = Depends(get_session),
     ):
         """
-        Transcribe audio using local NVIDIA NeMo ASR (default: Canary 1B v2) or,
-        when ``USE_API`` is set, a remote OpenAI-compatible Whisper transcription API.
-
-        This endpoint is compatible with the OpenAI Whisper API.
+        Queue transcription of an uploaded audio file. Poll
+        ``GET /v1/transcription-jobs/{job_id}`` for status and the result.
         """
-        _ = (model, prompt, timestamp_granularities, vad_filter, temperature)
+        _ = (model, prompt, timestamp_granularities, vad_filter)
 
-        global asr_model
-
-        if not asr_model and not getattr(config, "use_api", False):
-            raise HTTPException(
-                status_code=503,
-                detail="Model not loaded yet. Please try again in a few moments.",
-            )
-
-        logger.info("Transcription requested: %s, format: %s", file.filename, response_format)
+        logger.info("Transcription queued: %s, format: %s", file.filename, response_format)
 
         temp_dir = Path(config.temp_dir)
         temp_dir.mkdir(parents=True, exist_ok=True)
 
         temp_file = temp_dir / f"upload_{os.urandom(8).hex()}{Path(file.filename).suffix}"
-        wav_file: Optional[str] = None
-        pr = None
 
         try:
             with open(temp_file, "wb") as f:
                 content = await file.read()
                 f.write(content)
 
-            wav_file = convert_audio_to_wav(str(temp_file))
-
-            init_speaker_db()
-            pr = run_transcription_pipeline(
-                wav_file,
-                asr_model,
-                config,
-                speaker_db,
+            params = build_transcribe_params(
                 language=language,
+                response_format=response_format,
+                timestamps=timestamps,
                 word_timestamps=word_timestamps,
                 diarize=diarize,
                 include_diarization_in_text=include_diarization_in_text,
-                response_format=response_format,
-                timestamps=timestamps,
+                temperature=temperature,
+                extra={"temp_file": str(temp_file.resolve())},
             )
-
-            response = pr.response
-
-            if response_format == "json":
-                out = response.dict() if hasattr(response, "dict") else response.model_dump()
-            elif response_format == "text":
-                out = PlainTextResponse(response.text)
-            elif response_format == "srt":
-                out = PlainTextResponse(format_srt(pr.all_segments))
-            elif response_format == "vtt":
-                out = PlainTextResponse(format_vtt(pr.all_segments))
-            elif response_format == "verbose_json":
-                out = response.dict() if hasattr(response, "dict") else response.model_dump()
-            else:
-                raise HTTPException(status_code=400, detail=f"Unsupported response format: {response_format}")
-
-            return out
-
+            job_id = await enqueue_openai_transcription(session, params)
+            return TranscriptionJobCreateResponse(job_id=job_id, status="queued")
         except HTTPException:
-            raise
-        except Exception as e:
-            logger.error("Error during transcription: %s", str(e))
-            raise HTTPException(status_code=500, detail=str(e))
-        finally:
-            if pr is not None:
-                for chunk_path in pr.paths_to_cleanup:
-                    try:
-                        if os.path.exists(chunk_path):
-                            os.unlink(chunk_path)
-                    except OSError:
-                        pass
             try:
                 if temp_file.exists():
                     temp_file.unlink()
             except OSError:
                 pass
-            if wav_file and os.path.exists(wav_file) and wav_file != str(temp_file):
-                try:
-                    os.unlink(wav_file)
-                except OSError:
-                    pass
+            raise
+        except Exception as e:
+            logger.error("Error queueing transcription: %s", str(e))
+            try:
+                if temp_file.exists():
+                    temp_file.unlink()
+            except OSError:
+                pass
+            raise HTTPException(status_code=500, detail=str(e))
 
     @app.get("/health")
     async def health_check():
@@ -304,6 +278,8 @@ def create_app() -> FastAPI:
             "force_cpu": config.force_cpu,
             "cuda_available": use_cuda(),
             "gpu_info": torch.cuda.get_device_name(0) if use_cuda() else None,
+            "queue_enabled": config.queue_enabled,
+            "redis_ok": check_redis_connection(),
             "config": config.as_dict(),
         }
 
@@ -425,7 +401,11 @@ def create_app() -> FastAPI:
                 detail=f"Failed to query nearest embeddings: {str(e)}",
             )
 
-    @app.post("/v1/speakers/extract-from-audio")
+    @app.post(
+        "/v1/speakers/extract-from-audio",
+        response_model=TranscriptionJobCreateResponse,
+        status_code=202,
+    )
     async def extract_speaker_embeddings_from_audio(
         file: UploadFile = File(...),
         name: Optional[str] = Form(None),
@@ -439,19 +419,12 @@ def create_app() -> FastAPI:
         session: AsyncSession = Depends(get_session),
     ):
         """
-        Upload audio, store as a hidden recording (not listed under recordings), run
-        transcription + diarization, persist the result, and return speaker embeddings
-        and transcript (same shape as stored recording transcribe verbose_json).
+        Upload audio, store as a hidden recording, and queue transcription +
+        diarization. Poll ``GET /v1/transcription-jobs/{job_id}`` for speaker
+        embeddings and transcript in ``result``.
         """
         _ = temperature
-        global asr_model
-
         cfg = get_config()
-        if asr_model is None and not getattr(cfg, "use_api", False):
-            raise HTTPException(
-                status_code=503,
-                detail="Model not loaded yet. Please try again in a few moments.",
-            )
         rid = str(uuid.uuid4())
         suffix = Path(file.filename or "audio").suffix or ".bin"
         dest = Path(cfg.recordings_path) / f"{rid}{suffix}"
@@ -488,47 +461,31 @@ def create_app() -> FastAPI:
         await session.flush()
 
         try:
-            init_speaker_db()
-            pr = run_transcription_for_recording_path(
-                rec.file_path,
-                asr_model,
-                cfg,
-                speaker_db,
+            params = build_transcribe_params(
                 language=language,
+                response_format=response_format,
+                timestamps=timestamps,
                 word_timestamps=word_timestamps,
                 diarize=diarize,
                 include_diarization_in_text=include_diarization_in_text,
-                response_format=response_format,
-                timestamps=timestamps,
+                temperature=temperature,
             )
+            job_id = await enqueue_recording_transcription(
+                session,
+                rid,
+                params,
+                job_type=JOB_TYPE_SPEAKER_EXTRACT,
+            )
+            return TranscriptionJobCreateResponse(
+                job_id=job_id,
+                status="queued",
+                recording_id=rid,
+            )
+        except HTTPException:
+            raise
         except Exception as e:
-            logger.error("extract-from-audio failed for recording %s: %s", rid, e)
+            logger.error("extract-from-audio queue failed for recording %s: %s", rid, e)
             raise HTTPException(status_code=500, detail=str(e))
-
-        tid = await persist_pipeline_transcription(
-            session,
-            rec,
-            pr,
-            diarize=diarize,
-            word_timestamps=word_timestamps,
-        )
-
-        def _json_body() -> dict:
-            d = transcription_response_json_body(pr, tid)
-            d["recording_id"] = rid
-            return d
-
-        if response_format == "json":
-            return _json_body()
-        if response_format == "text":
-            return PlainTextResponse(pr.response.text)
-        if response_format == "srt":
-            return PlainTextResponse(format_srt(pr.all_segments))
-        if response_format == "vtt":
-            return PlainTextResponse(format_vtt(pr.all_segments))
-        if response_format == "verbose_json":
-            return _json_body()
-        raise HTTPException(status_code=400, detail=f"Unsupported response format: {response_format}")
 
     @app.post("/v1/speakers", response_model=SpeakerResponse)
     async def create_speaker(

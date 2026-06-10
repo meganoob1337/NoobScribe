@@ -124,6 +124,19 @@ class Config:
                     "USE_API is set but STT_API_KEY is missing. Set STT_API_KEY to your API bearer token."
                 )
 
+        # Redis queue for async transcription workers
+        self.redis_url = os.environ.get("REDIS_URL", "redis://redis:6379/0")
+        self.queue_enabled = os.environ.get("QUEUE_TRANSCRIPTION", "1").lower() in (
+            "1",
+            "true",
+            "yes",
+        )
+        self.skip_model_load = os.environ.get("SKIP_MODEL_LOAD", "").lower() in (
+            "1",
+            "true",
+            "yes",
+        )
+
         logger.debug(f"Initialized configuration: debug={self.debug}, model={self.model_id}")
 
     def update_hf_token(self, token: str) -> None:
@@ -161,6 +174,9 @@ class Config:
             "use_api": self.use_api,
             "stt_base_url": self.stt_base_url,
             "has_stt_api_key": bool(self.stt_api_key),
+            "redis_url": self.redis_url,
+            "queue_enabled": self.queue_enabled,
+            "skip_model_load": self.skip_model_load,
         }
 
 

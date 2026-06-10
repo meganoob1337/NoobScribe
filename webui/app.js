@@ -22,6 +22,15 @@ function noobScribeApp() {
     recError: null,
     transcribeBusy: false,
     transcribeError: null,
+    transcribeProgress: null,
+    recordingJobs: [],
+    recordingJobsLoading: false,
+    recordingJobsError: null,
+    _recordingJobsPollId: null,
+    allJobs: [],
+    jobsLoading: false,
+    jobsError: null,
+    _allJobsPollId: null,
     transcribeOpts: {
       language: "",
       diarize: true,
@@ -65,6 +74,7 @@ function noobScribeApp() {
     extractResult: null,
     extractBusy: false,
     extractError: null,
+    extractProgress: null,
     extractSnippetName: "",
     spExtractFile: null,
     spExtractBlob: null,
@@ -140,6 +150,12 @@ function noobScribeApp() {
       if (prevName === "record" && parts[0] !== "record") {
         this.teardownRecordPage();
       }
+      if (prevName === "detail" && !(parts[0] === "r" && parts[1])) {
+        this.stopRecordingJobsPolling();
+      }
+      if (prevName === "jobs" && parts[0] !== "jobs") {
+        this.stopAllJobsPolling();
+      }
       if (parts.length === 0 || parts[0] === "") {
         this.route = { name: "list", recordingId: null, transcriptionId: null };
         this.loadList(true);
@@ -152,6 +168,9 @@ function noobScribeApp() {
       } else if (parts[0] === "speakers") {
         this.route = { name: "speakers", recordingId: null, transcriptionId: null };
         this.loadSpeakers();
+      } else if (parts[0] === "jobs") {
+        this.route = { name: "jobs", recordingId: null, transcriptionId: null };
+        this.loadAllJobs();
       } else if (parts[0] === "r" && parts[1]) {
         const rid = parts[1];
         if (parts[2] === "t" && parts[3]) {
@@ -708,6 +727,7 @@ function noobScribeApp() {
       this.recording = null;
       try {
         this.recording = await NoobScribeApi.getRecording(id);
+        await this.loadRecordingJobs(id);
       } catch (e) {
         this.recError = String(e.message || e);
       } finally {
@@ -715,16 +735,162 @@ function noobScribeApp() {
       }
     },
 
+    isActiveJob(job) {
+      return job && (job.status === "queued" || job.status === "running");
+    },
+
+    activeRecordingJobs() {
+      return (this.recordingJobs || []).filter((j) => this.isActiveJob(j));
+    },
+
+    hasActiveJobs(jobs) {
+      return (jobs || []).some((j) => this.isActiveJob(j));
+    },
+
+    formatJobType(jobType) {
+      if (jobType === "recording_transcribe") return "Transcription";
+      if (jobType === "speaker_extract") return "Speaker extract";
+      if (jobType === "openai_transcribe") return "Upload";
+      return jobType || "Job";
+    },
+
+    formatJobStatus(status) {
+      if (!status) return "";
+      return status.charAt(0).toUpperCase() + status.slice(1);
+    },
+
+    async loadRecordingJobs(recordingId) {
+      if (!recordingId) return;
+      this.recordingJobsLoading = true;
+      this.recordingJobsError = null;
+      try {
+        const res = await NoobScribeApi.listRecordingJobs(recordingId);
+        this.recordingJobs = (res && res.data) || [];
+        this.syncRecordingJobsPolling();
+      } catch (e) {
+        this.recordingJobsError = String(e.message || e);
+        this.recordingJobs = [];
+      } finally {
+        this.recordingJobsLoading = false;
+      }
+    },
+
+    syncRecordingJobsPolling() {
+      if (this.route.name !== "detail") {
+        this.stopRecordingJobsPolling();
+        return;
+      }
+      if (this.hasActiveJobs(this.recordingJobs)) {
+        if (!this._recordingJobsPollId) {
+          this._recordingJobsPollId = setInterval(() => {
+            if (this.route.name === "detail" && this.route.recordingId) {
+              this.loadRecordingJobs(this.route.recordingId);
+            } else {
+              this.stopRecordingJobsPolling();
+            }
+          }, 2000);
+        }
+      } else {
+        this.stopRecordingJobsPolling();
+      }
+    },
+
+    stopRecordingJobsPolling() {
+      if (this._recordingJobsPollId) {
+        clearInterval(this._recordingJobsPollId);
+        this._recordingJobsPollId = null;
+      }
+    },
+
+    async cancelJob(jobId, context) {
+      context = context || "all";
+      try {
+        await NoobScribeApi.cancelTranscriptionJob(jobId);
+        if (context === "recording" && this.route.recordingId) {
+          await this.loadRecordingJobs(this.route.recordingId);
+        } else if (context === "all") {
+          await this.loadAllJobs();
+        }
+      } catch (e) {
+        if (context === "recording") {
+          this.recordingJobsError = String(e.message || e);
+        } else {
+          this.jobsError = String(e.message || e);
+        }
+      }
+    },
+
+    async loadAllJobs() {
+      this.jobsLoading = true;
+      this.jobsError = null;
+      try {
+        const res = await NoobScribeApi.listTranscriptionJobs({ limit: 100 });
+        this.allJobs = (res && res.data) || [];
+        this.syncAllJobsPolling();
+      } catch (e) {
+        this.jobsError = String(e.message || e);
+        this.allJobs = [];
+      } finally {
+        this.jobsLoading = false;
+      }
+    },
+
+    syncAllJobsPolling() {
+      if (this.route.name !== "jobs") {
+        this.stopAllJobsPolling();
+        return;
+      }
+      if (this.hasActiveJobs(this.allJobs)) {
+        if (!this._allJobsPollId) {
+          this._allJobsPollId = setInterval(() => {
+            if (this.route.name === "jobs") {
+              this.loadAllJobs();
+            } else {
+              this.stopAllJobsPolling();
+            }
+          }, 2000);
+        }
+      } else {
+        this.stopAllJobsPolling();
+      }
+    },
+
+    stopAllJobsPolling() {
+      if (this._allJobsPollId) {
+        clearInterval(this._allJobsPollId);
+        this._allJobsPollId = null;
+      }
+    },
+
     audioSrc(id) {
       return NoobScribeApi.recordingAudioUrl(id);
+    },
+
+    formatJobProgress(job) {
+      if (!job) return "";
+      if (job.status === "queued") return "Queued…";
+      if (job.status === "failed") return job.error_message || "Failed";
+      if (job.status === "cancelled") return "Cancelled";
+      if (job.status === "completed") return "Completed";
+      const stage = job.progress_stage || "running";
+      const cur = job.progress_current;
+      const total = job.progress_total;
+      if (stage === "diarization") return "Running diarization…";
+      if (stage === "preparing") return "Preparing audio…";
+      if (stage === "transcribing" && cur != null && total != null) {
+        return "Transcribing chunk " + cur + "/" + total + "…";
+      }
+      if (stage === "transcribing") return "Transcribing…";
+      return "Running…";
     },
 
     async runTranscribe() {
       if (!this.route.recordingId) return;
       this.transcribeBusy = true;
       this.transcribeError = null;
+      this.transcribeProgress = "Queuing…";
       try {
-        await NoobScribeApi.transcribeRecording(this.route.recordingId, {
+        const queued = await NoobScribeApi.transcribeRecording(this.route.recordingId, {
           language: this.transcribeOpts.language || null,
           diarize: this.transcribeOpts.diarize,
           word_timestamps: this.transcribeOpts.word_timestamps,
@@ -732,9 +898,23 @@ function noobScribeApp() {
           response_format: "verbose_json",
           timestamps: true,
         });
+        await this.loadRecordingJobs(this.route.recordingId);
+        const job = await NoobScribeApi.pollTranscriptionJob(queued.job_id, {
+          onProgress: (j) => {
+            this.transcribeProgress = this.formatJobProgress(j);
+          },
+        });
+        if (job.status === "failed") {
+          throw new Error(job.error_message || "Transcription failed");
+        }
+        if (job.status === "cancelled") {
+          throw new Error("Transcription cancelled");
+        }
+        this.transcribeProgress = null;
         await this.loadRecording(this.route.recordingId);
       } catch (e) {
         this.transcribeError = String(e.message || e);
+        this.transcribeProgress = null;
       } finally {
         this.transcribeBusy = false;
       }
@@ -1055,15 +1235,29 @@ function noobScribeApp() {
       }
       this.extractBusy = true;
       this.extractError = null;
+      this.extractProgress = "Queuing…";
       try {
-        const res = await NoobScribeApi.extractSpeakersFromAudio(file, {
+        const queued = await NoobScribeApi.extractSpeakersFromAudio(file, {
           name: this.extractSnippetName.trim() || undefined,
           diarize: true,
           word_timestamps: false,
           timestamps: true,
           include_diarization_in_text: false,
         });
+        const job = await NoobScribeApi.pollTranscriptionJob(queued.job_id, {
+          onProgress: (j) => {
+            this.extractProgress = this.formatJobProgress(j);
+          },
+        });
+        if (job.status === "failed") {
+          throw new Error(job.error_message || "Speaker extraction failed");
+        }
+        const res = job.result || {};
+        if (queued.recording_id && !res.recording_id) {
+          res.recording_id = queued.recording_id;
+        }
         this.extractResult = res;
+        this.extractProgress = null;
         const speakers = res && res.speakers;
         const hasSpeakerEmbeddings =
           Array.isArray(speakers) &&
@@ -1075,6 +1269,7 @@ function noobScribeApp() {
         await this.loadSpeakers();
       } catch (e) {
         this.extractError = String(e.message || e);
+        this.extractProgress = null;
       } finally {
         this.extractBusy = false;
       }

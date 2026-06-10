@@ -4,9 +4,10 @@ from __future__ import annotations
 import logging
 import os
 import uuid
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 
 from audio import convert_audio_to_wav
 from config import get_config
@@ -34,6 +35,7 @@ def run_transcription_for_recording_path(
     include_diarization_in_text: Optional[bool] = None,
     response_format: str = "verbose_json",
     timestamps: bool = True,
+    on_progress: Callable[[str, int, int], None] | None = None,
 ) -> PipelineRunResult:
     wav_file = convert_audio_to_wav(recording_file_path)
     try:
@@ -48,6 +50,7 @@ def run_transcription_for_recording_path(
             include_diarization_in_text=include_diarization_in_text,
             response_format=response_format,
             timestamps=timestamps,
+            on_progress=on_progress,
         )
     except Exception:
         if os.path.exists(wav_file) and wav_file != recording_file_path:
@@ -72,14 +75,13 @@ def run_transcription_for_recording_path(
     return pr
 
 
-async def persist_pipeline_transcription(
-    session: AsyncSession,
+def _build_transcription_result_row(
     rec: RecordingORM,
     pr: PipelineRunResult,
     *,
     diarize: bool,
     word_timestamps: bool,
-) -> str:
+) -> tuple[str, TranscriptionResultORM]:
     cfg = get_config()
     seg_json = [segment_to_dict(s) for s in pr.all_segments]
     spk_json = [speaker_info_to_dict(s) for s in pr.speakers_list] if pr.speakers_list else None
@@ -101,6 +103,37 @@ async def persist_pipeline_transcription(
         speakers_json=spk_json,
         duration_seconds=dur,
         word_timestamps=word_timestamps,
+    )
+    return tid, tr
+
+
+def persist_pipeline_transcription_sync(
+    session: Session,
+    rec: RecordingORM,
+    pr: PipelineRunResult,
+    *,
+    diarize: bool,
+    word_timestamps: bool,
+) -> str:
+    tid, tr = _build_transcription_result_row(
+        rec, pr, diarize=diarize, word_timestamps=word_timestamps
+    )
+    session.add(tr)
+    session.add(rec)
+    session.flush()
+    return tid
+
+
+async def persist_pipeline_transcription(
+    session: AsyncSession,
+    rec: RecordingORM,
+    pr: PipelineRunResult,
+    *,
+    diarize: bool,
+    word_timestamps: bool,
+) -> str:
+    tid, tr = _build_transcription_result_row(
+        rec, pr, diarize=diarize, word_timestamps=word_timestamps
     )
     session.add(tr)
     session.add(rec)

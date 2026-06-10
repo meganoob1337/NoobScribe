@@ -62,3 +62,30 @@ class TranscriptionResult(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
     recording: Mapped["Recording"] = relationship("Recording", back_populates="transcriptions")
+
+
+class TranscriptionJob(Base):
+    __tablename__ = "transcription_jobs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    job_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="queued", index=True)
+    recording_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("recordings.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    transcription_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("transcription_results.id", ondelete="SET NULL"), nullable=True
+    )
+    params_json: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    progress_stage: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    progress_current: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    progress_total: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    result_json: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    rq_job_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    recording: Mapped[Optional["Recording"]] = relationship("Recording")
+    transcription: Mapped[Optional["TranscriptionResult"]] = relationship("TranscriptionResult")

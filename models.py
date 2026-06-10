@@ -220,3 +220,36 @@ class TranscriptionResultResponse(BaseModel):
 class TranscriptionResultListResponse(BaseModel):
     object: str = "list"
     data: List[TranscriptionResultResponse]
+
+
+class TranscriptionJobResponse(BaseModel):
+    """Status of an async transcription job."""
+
+    job_id: str
+    job_type: str
+    status: str
+    recording_id: Optional[str] = None
+    recording_name: Optional[str] = None
+    transcription_id: Optional[str] = None
+    progress_stage: Optional[str] = None
+    progress_current: Optional[int] = None
+    progress_total: Optional[int] = None
+    error_message: Optional[str] = None
+    result: Optional[Dict[str, Any]] = None
+    cancellable: bool = False
+    created_at: Optional[str] = None
+    started_at: Optional[str] = None
+    completed_at: Optional[str] = None
+
+
+class TranscriptionJobCreateResponse(BaseModel):
+    """202 response when a transcription job is queued."""
+
+    job_id: str
+    status: str = "queued"
+    recording_id: Optional[str] = None
+
+
+class TranscriptionJobListResponse(BaseModel):
+    object: str = "list"
+    data: List[TranscriptionJobResponse]
