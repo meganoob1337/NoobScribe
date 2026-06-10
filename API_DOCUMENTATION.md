@@ -79,7 +79,15 @@ Returns queued and running jobs, plus completed/failed/cancelled jobs **only whi
 
 Only `queued` and `running` jobs can be cancelled (`409` otherwise). Sets `status` to `cancelled`. Running jobs stop cooperatively between pipeline chunks (SimpleWorker).
 
-**Health:** `GET /health` includes `queue_enabled` and `redis_ok`.
+**Reconcile stuck queued jobs:** `POST /v1/transcription-jobs/reconcile?stale_seconds=60`
+
+Idempotent recovery for jobs stuck in `queued` when Redis/RQ work was lost or finished without updating SQLite. Runs automatically on API startup. Query param `stale_seconds` (minimum 30) controls how long a job must remain queued before re-enqueue is attempted.
+
+**Response:** `{ "examined", "re_enqueued", "skipped", "failed" }`
+
+**Health:** `GET /health` includes `queue_enabled`, `redis_ok`, `workers_registered`, and `queue_depth`.
+
+**Troubleshooting stuck jobs:** If jobs stay `queued` with `started_at` null, check `workers_registered` in `/health` (must be ≥ 1). Inspect worker logs for `Job … not found`. Re-run recovery with `POST /v1/transcription-jobs/reconcile`. Redis queue depth: `LLEN rq:queue:transcription`.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -305,6 +313,10 @@ Check the health status of the API and the loaded model.
   "force_cpu": false,
   "cuda_available": true,
   "gpu_info": "NVIDIA GeForce RTX 3090",
+  "queue_enabled": true,
+  "redis_ok": true,
+  "workers_registered": 1,
+  "queue_depth": 0,
   "config": {
     "model_id": "nvidia/canary-1b-v2",
     "chunk_duration": 20.0,
@@ -330,6 +342,10 @@ Check the health status of the API and the loaded model.
 - `force_cpu` (boolean): Whether `FORCE_CPU` is set, forcing CPU inference even if a GPU is present
 - `cuda_available` (boolean): Whether the server will use CUDA/GPU for inference (false when `force_cpu` is true or no GPU is available)
 - `gpu_info` (string, optional): GPU name if CUDA is used for inference, `null` otherwise
+- `queue_enabled` (boolean): Whether async transcription enqueue is enabled (`QUEUE_TRANSCRIPTION`)
+- `redis_ok` (boolean): Whether Redis accepts a ping at `REDIS_URL`
+- `workers_registered` (integer): RQ workers listening on the `transcription` queue
+- `queue_depth` (integer): Jobs waiting in the Redis transcription queue
 - `config` (object): Current server configuration (includes `force_cpu`, `use_api`, `stt_base_url`, `has_stt_api_key`)
 
 #### Example Request
@@ -1030,6 +1046,27 @@ Other formats (`text`, `srt`, `vtt`) place plain text in `result.text` (and `res
 **Response:** Updated `TranscriptionJobResponse` with `status: "cancelled"`.
 
 **Status codes:** `200`, `404`, `409` (not cancellable).
+
+---
+
+### 18b. Reconcile stuck transcription jobs
+
+**Endpoint:** `POST /v1/transcription-jobs/reconcile`
+
+**Query:** `stale_seconds` (default 60, minimum 30)
+
+**Response:**
+
+```json
+{
+  "examined": 2,
+  "re_enqueued": 1,
+  "skipped": 1,
+  "failed": 0
+}
+```
+
+Re-enqueues `queued` jobs older than `stale_seconds` when the linked RQ job is missing or already finished/failed. Skips jobs still waiting or running in Redis.
 
 ---
 

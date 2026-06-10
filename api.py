@@ -41,13 +41,13 @@ from models import (
 )
 from routers.jobs import router as jobs_router
 from routers.recordings import router as recordings_router
-from services.job_queue import check_redis_connection
+from services.job_queue import check_redis_connection, get_queue_stats
 from services.transcription_enqueue import (
     build_transcribe_params,
     enqueue_openai_transcription,
     enqueue_recording_transcription,
 )
-from services.transcription_jobs import JOB_TYPE_SPEAKER_EXTRACT
+from services.transcription_jobs import JOB_TYPE_SPEAKER_EXTRACT, reconcile_stale_queued_jobs
 from services.rematch_stored_transcriptions import rematch_all_stored_transcriptions
 from services.speaker_embedding_snippets import collect_snippets_for_enrolled_embedding
 from transcription import load_model
@@ -172,6 +172,18 @@ def create_app() -> FastAPI:
         else:
             logger.info("No HuggingFace access token (use DIARIZATION_MODEL_PATH for offline)")
 
+        if config.queue_enabled and check_redis_connection():
+            try:
+                from database.db import _session_factory
+
+                if _session_factory is not None:
+                    async with _session_factory() as session:
+                        result = await reconcile_stale_queued_jobs(session)
+                        if result["re_enqueued"] or result["failed"]:
+                            logger.info("Startup job reconcile: %s", result)
+            except Exception as e:
+                logger.warning("Startup job reconcile failed: %s", e)
+
         yield
 
     app = FastAPI(title="NoobScribe API", lifespan=lifespan)
@@ -269,6 +281,8 @@ def create_app() -> FastAPI:
         """
         global asr_model
 
+        queue_stats = get_queue_stats()
+
         return {
             "status": "ok",
             "version": "1.0.0",
@@ -279,7 +293,9 @@ def create_app() -> FastAPI:
             "cuda_available": use_cuda(),
             "gpu_info": torch.cuda.get_device_name(0) if use_cuda() else None,
             "queue_enabled": config.queue_enabled,
-            "redis_ok": check_redis_connection(),
+            "redis_ok": queue_stats["redis_ok"],
+            "workers_registered": queue_stats["workers_registered"],
+            "queue_depth": queue_stats["queue_depth"],
             "config": config.as_dict(),
         }
 

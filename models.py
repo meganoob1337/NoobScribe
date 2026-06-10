@@ -253,3 +253,12 @@ class TranscriptionJobCreateResponse(BaseModel):
 class TranscriptionJobListResponse(BaseModel):
     object: str = "list"
     data: List[TranscriptionJobResponse]
+
+
+class TranscriptionJobReconcileResponse(BaseModel):
+    """Result of stale queued job reconciliation."""
+
+    examined: int
+    re_enqueued: int
+    skipped: int
+    failed: int

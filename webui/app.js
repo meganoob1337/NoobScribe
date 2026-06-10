@@ -20,9 +20,7 @@ function noobScribeApp() {
     recording: null,
     recLoading: false,
     recError: null,
-    transcribeBusy: false,
     transcribeError: null,
-    transcribeProgress: null,
     recordingJobs: [],
     recordingJobsLoading: false,
     recordingJobsError: null,
@@ -129,6 +127,10 @@ function noobScribeApp() {
       this._recordPipMainMessageHandler = (ev) => this._onRecordPipMainMessage(ev);
       window.addEventListener("message", this._recordPipMainMessageHandler);
       this.navigate();
+      this.refreshHealth();
+    },
+
+    refreshHealth() {
       NoobScribeApi.health()
         .then((h) => {
           this.health = h;
@@ -137,6 +139,15 @@ function noobScribeApp() {
         .catch((e) => {
           this.healthError = String(e.message || e);
         });
+    },
+
+    queueWorkerWarning() {
+      const h = this.health;
+      if (!h || !h.queue_enabled || !h.redis_ok) return "";
+      if ((h.workers_registered || 0) === 0) {
+        return "No transcription worker connected — jobs will stay queued.";
+      }
+      return "";
     },
 
     navigate() {
@@ -761,12 +772,21 @@ function noobScribeApp() {
 
     async loadRecordingJobs(recordingId) {
       if (!recordingId) return;
+      const hadActive = this.hasActiveJobs(this.recordingJobs);
       this.recordingJobsLoading = true;
       this.recordingJobsError = null;
       try {
         const res = await NoobScribeApi.listRecordingJobs(recordingId);
         this.recordingJobs = (res && res.data) || [];
         this.syncRecordingJobsPolling();
+        if (
+          hadActive &&
+          !this.hasActiveJobs(this.recordingJobs) &&
+          this.route.name === "detail" &&
+          this.route.recordingId === recordingId
+        ) {
+          this.recording = await NoobScribeApi.getRecording(recordingId);
+        }
       } catch (e) {
         this.recordingJobsError = String(e.message || e);
         this.recordingJobs = [];
@@ -886,11 +906,9 @@ function noobScribeApp() {
 
     async runTranscribe() {
       if (!this.route.recordingId) return;
-      this.transcribeBusy = true;
       this.transcribeError = null;
-      this.transcribeProgress = "Queuing…";
       try {
-        const queued = await NoobScribeApi.transcribeRecording(this.route.recordingId, {
+        await NoobScribeApi.transcribeRecording(this.route.recordingId, {
           language: this.transcribeOpts.language || null,
           diarize: this.transcribeOpts.diarize,
           word_timestamps: this.transcribeOpts.word_timestamps,
@@ -899,24 +917,8 @@ function noobScribeApp() {
           timestamps: true,
         });
         await this.loadRecordingJobs(this.route.recordingId);
-        const job = await NoobScribeApi.pollTranscriptionJob(queued.job_id, {
-          onProgress: (j) => {
-            this.transcribeProgress = this.formatJobProgress(j);
-          },
-        });
-        if (job.status === "failed") {
-          throw new Error(job.error_message || "Transcription failed");
-        }
-        if (job.status === "cancelled") {
-          throw new Error("Transcription cancelled");
-        }
-        this.transcribeProgress = null;
-        await this.loadRecording(this.route.recordingId);
       } catch (e) {
         this.transcribeError = String(e.message || e);
-        this.transcribeProgress = null;
-      } finally {
-        this.transcribeBusy = false;
       }
     },
 

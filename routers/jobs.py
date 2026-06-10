@@ -10,13 +10,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from database.db import get_session
 from database.models import Recording as RecordingORM
 from database.models import TranscriptionJob as TranscriptionJobORM
-from models import TranscriptionJobListResponse, TranscriptionJobResponse
+from models import TranscriptionJobListResponse, TranscriptionJobReconcileResponse, TranscriptionJobResponse
 from services.job_queue import cancel_rq_job
 from services.transcription_jobs import (
     ACTIVE_JOB_STATUSES,
     JOB_STATUS_CANCELLED,
     job_to_dict,
     job_visible_in_ui,
+    reconcile_stale_queued_jobs,
 )
 
 router = APIRouter(prefix="/transcription-jobs", tags=["transcription-jobs"])
@@ -65,6 +66,16 @@ async def list_transcription_jobs(
             for j in visible
         ]
     )
+
+
+@router.post("/reconcile", response_model=TranscriptionJobReconcileResponse)
+async def reconcile_transcription_jobs(
+    stale_seconds: int = 60,
+    session: AsyncSession = Depends(get_session),
+):
+    """Re-enqueue queued jobs stuck after lost or finished RQ work (idempotent)."""
+    result = await reconcile_stale_queued_jobs(session, stale_seconds=max(30, stale_seconds))
+    return TranscriptionJobReconcileResponse(**result)
 
 
 @router.get("/{job_id}", response_model=TranscriptionJobResponse)

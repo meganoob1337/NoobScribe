@@ -39,3 +39,5 @@ tests/
 test_*.py
 data/
 huggingface
+.cursor
+data

@@ -1,8 +1,9 @@
 """Create and serialize transcription job records."""
 from __future__ import annotations
 
+import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy import select
@@ -10,7 +11,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from database.models import TranscriptionJob as TranscriptionJobORM
-from services.job_queue import enqueue_transcription_job, rq_job_exists
+from services.job_queue import (
+    enqueue_transcription_job,
+    get_rq_job_status,
+    rq_job_exists,
+    rq_job_needs_reenqueue,
+)
+
+logger = logging.getLogger(__name__)
 
 JOB_TYPE_RECORDING = "recording_transcribe"
 JOB_TYPE_OPENAI = "openai_transcribe"
@@ -46,9 +54,66 @@ async def create_and_enqueue_job(
     )
     session.add(job)
     await session.flush()
-    job.rq_job_id = enqueue_transcription_job(job_id)
+    # Commit before Redis enqueue so the worker can see the row immediately.
+    await session.commit()
+
+    try:
+        job.rq_job_id = enqueue_transcription_job(job_id)
+    except Exception as e:
+        job.status = JOB_STATUS_FAILED
+        job.error_message = f"Failed to enqueue transcription job: {e}"
+        job.completed_at = _utcnow()
+        await session.flush()
+        await session.commit()
+        raise
+
     await session.flush()
+    await session.commit()
     return job_id
+
+
+async def reconcile_stale_queued_jobs(
+    session: AsyncSession,
+    *,
+    stale_seconds: int = 60,
+) -> Dict[str, int]:
+    """Re-enqueue queued jobs whose RQ work was lost or already finished."""
+    cutoff = _utcnow() - timedelta(seconds=stale_seconds)
+    q = select(TranscriptionJobORM).where(
+        TranscriptionJobORM.status == JOB_STATUS_QUEUED,
+        TranscriptionJobORM.created_at < cutoff,
+    )
+    rows = list((await session.execute(q)).scalars().all())
+
+    re_enqueued = 0
+    skipped = 0
+    failed = 0
+
+    for job in rows:
+        rq_status = get_rq_job_status(job.rq_job_id) if job.rq_job_id else None
+        if not rq_job_needs_reenqueue(rq_status):
+            skipped += 1
+            continue
+        try:
+            job.rq_job_id = enqueue_transcription_job(job.id)
+            re_enqueued += 1
+            logger.info("Re-enqueued stale queued job %s (rq_status=%s)", job.id, rq_status)
+        except Exception as e:
+            job.status = JOB_STATUS_FAILED
+            job.error_message = f"Reconcile failed to re-enqueue: {e}"
+            job.completed_at = _utcnow()
+            failed += 1
+            logger.error("Failed to re-enqueue stale job %s: %s", job.id, e)
+
+    if re_enqueued or failed:
+        await session.flush()
+
+    return {
+        "examined": len(rows),
+        "re_enqueued": re_enqueued,
+        "skipped": skipped,
+        "failed": failed,
+    }
 
 
 def job_visible_in_ui(job: TranscriptionJobORM) -> bool:

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -212,26 +213,38 @@ def _run_openai_job(job_id: str) -> None:
                 pass
 
 
+def _acquire_job_for_processing(job_id: str) -> Optional[tuple[str, Optional[str]]]:
+    """Load job and mark running; retry briefly if the API commit is still in flight."""
+    for attempt in range(5):
+        with get_sync_session() as session:
+            job = session.get(TranscriptionJobORM, job_id)
+            if not job:
+                if attempt < 4:
+                    time.sleep(0.2 * (attempt + 1))
+                    continue
+                logger.error("Job %s not found after retries", job_id)
+                raise RuntimeError(f"Job {job_id} not found in database after retries")
+            if job.status == JOB_STATUS_CANCELLED:
+                logger.info("Job %s was cancelled; skipping", job_id)
+                return None
+            if job.status not in (JOB_STATUS_RUNNING, JOB_STATUS_QUEUED):
+                logger.info("Job %s already in status %s; skipping", job_id, job.status)
+                return None
+            job.status = JOB_STATUS_RUNNING
+            job.started_at = _utcnow()
+            session.flush()
+            return job.job_type, job.recording_id
+    raise RuntimeError(f"Job {job_id} not found in database after retries")
+
+
 def process_transcription_job(job_id: str) -> None:
     """RQ entrypoint: run a queued transcription job."""
     init_sync_db()
 
-    with get_sync_session() as session:
-        job = session.get(TranscriptionJobORM, job_id)
-        if not job:
-            logger.error("Job %s not found", job_id)
-            return
-        if job.status == JOB_STATUS_CANCELLED:
-            logger.info("Job %s was cancelled; skipping", job_id)
-            return
-        if job.status not in (JOB_STATUS_RUNNING, JOB_STATUS_QUEUED):
-            logger.info("Job %s already in status %s; skipping", job_id, job.status)
-            return
-        job.status = JOB_STATUS_RUNNING
-        job.started_at = _utcnow()
-        session.flush()
-        job_type = job.job_type
-        recording_id = job.recording_id
+    acquired = _acquire_job_for_processing(job_id)
+    if acquired is None:
+        return
+    job_type, recording_id = acquired
 
     try:
         _check_job_cancelled(job_id)

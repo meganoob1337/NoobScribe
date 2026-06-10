@@ -124,6 +124,7 @@
             <span class="h-1.5 w-1.5 shrink-0 rounded-full" :class="health.model_loaded ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]' : 'bg-amber-400'"></span>
             <span x-text="health.model_loaded ? 'Model ready' : 'Model not loaded'"></span>
           </div>
+          <p x-show="queueWorkerWarning()" class="text-amber-200/90" x-text="queueWorkerWarning()"></p>
           <p class="line-clamp-2 font-mono text-[0.65rem] text-slate-600" x-text="health.config?.model_id || ''"></p>
         </div>
         <p x-show="healthError" class="text-xs text-amber-200/90" x-text="'API: ' + healthError"></p>
@@ -358,8 +359,7 @@
               </div>
             </div>
             <div class="flex flex-wrap items-center gap-3">
-              <button type="button" @click="runTranscribe()" :disabled="transcribeBusy" class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-medium" x-text="transcribeBusy ? 'Running…' : 'Run transcription'"></button>
-              <p x-show="transcribeProgress" class="text-sm text-slate-400" x-text="transcribeProgress"></p>
+              <button type="button" @click="runTranscribe()" class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium">Run transcription</button>
             </div>
           </div>
           <div x-show="activeRecordingJobs().length || recordingJobsLoading" class="p-4 rounded-xl border border-slate-800 bg-slate-900/50 space-y-3">

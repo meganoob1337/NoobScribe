@@ -37,7 +37,7 @@ Navigation uses `location.hash` (no server-side router). `hashchange` triggers p
 
 - **Layout**: Fixed **sidebar** on large screens; **slide-out drawer** on small screens with backdrop, hamburger in sticky header, Escape closes drawer.
 - **Nav items**: Recordings (active for list + detail + transcript), Upload, Record, Speakers, Jobs; **API docs** link to `/docs` (full navigation, not hash).
-- **Health** (`GET /health`): Fetched once on init. Sidebar (and mobile header subtitle) show model readiness (`model_loaded`) and `config.model_id`. Errors surface as amber “API: …” text.
+- **Health** (`GET /health`): Fetched once on init. Sidebar (and mobile header subtitle) show model readiness (`model_loaded`) and `config.model_id`. When the queue is enabled and Redis is up but `workers_registered` is 0, the sidebar shows an amber warning that jobs will stay queued. Errors surface as amber “API: …” text.
 
 ## Feature: recordings list (`list`)
 
@@ -75,11 +75,9 @@ Rebuild note: permissions UX, codec support, and “tab vs window” audio behav
 - **Audio playback**: `<audio>` src = `GET /v1/recordings/:id/audio` (URL builder in client).
 - **Transcribe panel**:
   - Options bound to state: optional **language** string; checkboxes **diarize**, **word_timestamps**, **include_diarization_in_text**.
-  - **Run** sends `POST /v1/recordings/:id/transcribe` as **FormData** (returns `202` + `job_id`), then **polls** `GET /v1/transcription-jobs/:jobId` every ~2s until `completed` or `failed`.
-  - Shows live progress from `progress_stage` / `progress_current` / `progress_total` (e.g. “Transcribing chunk 3/10…”, “Running diarization…”).
-  - After queueing, refreshes the **Active jobs** panel via `GET /v1/recordings/:id/transcription-jobs`.
-  - After success, reloads recording to refresh transcriptions list. Short HTTP requests keep the rest of the UI responsive during long jobs.
-- **Active jobs panel**: Shows **queued** and **running** jobs for this recording only. Polls every ~2s while any are active. Each row: status badge, job type, progress text, **Cancel** → `POST /v1/transcription-jobs/:jobId/cancel`.
+  - **Run** sends `POST /v1/recordings/:id/transcribe` as **FormData** (returns `202` + `job_id`), then refreshes the **Active jobs** panel via `GET /v1/recordings/:id/transcription-jobs`. The button stays enabled so multiple jobs can be queued with different options.
+  - Queue/API errors show inline in the transcribe panel; job progress and cancel are not shown here.
+- **Active jobs panel**: Shows **queued** and **running** jobs for this recording only. Polls every ~2s while any are active. Each row: status badge, job type, live progress from `progress_stage` / `progress_current` / `progress_total` (e.g. “Transcribing chunk 3/10…”, “Running diarization…”), **Cancel** → `POST /v1/transcription-jobs/:jobId/cancel`. When the last active job finishes, the recording is re-fetched so the **Stored transcriptions** list updates.
 - **Transcriptions list**: Each item shows created time and “· diarized” if `diarization_enabled`; click → `#/r/:id/t/:transcriptionId`.
 - **Delete recording**: Confirm dialog → `DELETE /v1/recordings/:id` → navigate home.
 
