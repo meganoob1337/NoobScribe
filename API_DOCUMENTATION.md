@@ -113,7 +113,7 @@ Queue transcription of an uploaded audio file with optional speaker diarization.
 |-----------|------|----------|---------|-------------|
 | `file` | File | Yes | - | The audio file to transcribe (supports common audio formats: wav, mp3, m4a, flac, etc.) |
 | `model` | string | No | `"whisper-1"` | Model identifier (accepted for compatibility). **Local mode:** server uses configured NeMo ASR (`MODEL_ID` / `MODEL_PATH`). **API mode (`USE_API`):** the form field is still accepted; the server uses **`MODEL_ID`** as the remote transcription `model` parameter. |
-| `language` | string | No | `null` | Language code of the audio (e.g., "en", "de", "fr"). If omitted or blank, the service runs [SpeechBrain VoxLingua107 ECAPA](https://huggingface.co/speechbrain/lang-id-voxlingua107-ecapa) on the first portion of the audio (see `LANGUAGE_ID_MAX_AUDIO_SECONDS`) and passes that code as both NeMo `source_lang` and `target_lang`. If identification is disabled or fails, both are left unset (previous behavior). Set `DISABLE_LANGUAGE_ID=1` to skip detection. |
+| `language` | string | No | `null` | Language code of the audio (e.g., "en", "de", "fr"). If omitted or blank, the service runs [SpeechBrain VoxLingua107 ECAPA](https://huggingface.co/speechbrain/lang-id-voxlingua107-ecapa) on up to three segments (start, middle, 75%) of up to `LANGUAGE_ID_MAX_AUDIO_SECONDS` each and uses the majority label (first segment on a three-way tie). Shorter clips use fewer samples (one full clip when the file is ≤ segment length or too short for distinct windows). That code is passed as both NeMo `source_lang` and `target_lang`. If identification is disabled or fails, both are left unset (previous behavior). Set `DISABLE_LANGUAGE_ID=1` to skip detection. |
 | `prompt` | string | No | `null` | Optional prompt to guide the transcription (accepted for compatibility but currently ignored) |
 | `response_format` | string | No | `"json"` | Format of the response. Options: `"json"`, `"text"`, `"srt"`, `"vtt"`, `"verbose_json"` |
 | `temperature` | float | No | `0.0` | Temperature for sampling (0.0 to 1.0). Lower values make output more deterministic. |
@@ -1114,7 +1114,7 @@ Other useful paths:
 | `CHROMADB_PATH` | `./data/speakers` | Speaker embedding store |
 | `LANGUAGE_ID_MODEL_ID` | `speechbrain/lang-id-voxlingua107-ecapa` | Hugging Face model id for spoken language ID when `language` is omitted |
 | `LANGUAGE_ID_SAVEDIR` | `{TEMP_DIR}/speechbrain_lang_id` | Download/cache directory for the language-ID model |
-| `LANGUAGE_ID_MAX_AUDIO_SECONDS` | `30` | Seconds of audio (from the start) used for identification |
+| `LANGUAGE_ID_MAX_AUDIO_SECONDS` | `30` | Seconds per identification segment (start, middle, 75%); majority vote picks the final language |
 | `DISABLE_LANGUAGE_ID` | unset | If `1` / `true` / `yes`, skip language ID; NeMo `source_lang` / `target_lang` stay unset when no `language` is sent |
 | `USE_API` | unset | If `1` / `true` / `yes`, use remote OpenAI-compatible STT instead of loading NeMo locally. Requires **`STT_BASE_URL`** and **`STT_API_KEY`**. |
 | `STT_BASE_URL` | _(unset)_ | OpenAI-compatible API base URL (e.g. `https://api.openai.com/v1`). Required when `USE_API` is set. |

@@ -16,7 +16,7 @@ Use case: run a zero-install transcription workflow from the browser - upload me
 - Segment timestamps; optional word timestamps and diarization
 - **Speaker embedding memory** ([**Chroma**](https://www.trychroma.com/)) with display names and re-matching across stored transcripts
 - **Recording library** ([**SQLAlchemy**](https://www.sqlalchemy.org/) + SQLite + on-disk audio) and **Web UI** at `/ui` (transcript view: per-segment play/pause via `GET /v1/audio/snippet`, streams only on play)
-- Optional **spoken language ID** ([**SpeechBrain**](https://speechbrain.github.io/) · [VoxLingua107 ECAPA](https://huggingface.co/speechbrain/lang-id-voxlingua107-ecapa)) when `language` is omitted
+- Optional **spoken language ID** ([**SpeechBrain**](https://speechbrain.github.io/) · [VoxLingua107 ECAPA](https://huggingface.co/speechbrain/lang-id-voxlingua107-ecapa)) when `language` is omitted — up to three 30s samples (start / middle / 75%), majority vote; shorter clips use one sample
 - Offline options: `MODEL_PATH` ([NeMo](https://github.com/NVIDIA/NeMo) `.nemo`), `DIARIZATION_MODEL_PATH` (local [**Pyannote**](https://github.com/pyannote/pyannote-audio) pipeline)
 
 Full endpoint reference: **[API_DOCUMENTATION.md](API_DOCUMENTATION.md)**

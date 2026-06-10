@@ -7,3 +7,5 @@ If the frontend feature set changes, update frontend_features.md accordingly.
 This repository is **NoobScribe**; keep branding and attribution (ATTRIBUTION.md) accurate when editing docs.
 
 Do not run Python commands to syntax-check files unless the user asks.
+
+ALWAYS use the venv when using python
