@@ -42,16 +42,16 @@
     ></div>
 
     <aside
-      class="fixed inset-y-0 left-0 z-50 flex min-h-0 w-[min(18rem,88vw)] flex-col border-r border-slate-800/80 bg-slate-950 shadow-2xl shadow-violet-950/20 transition-transform duration-200 ease-out lg:static lg:min-h-screen lg:translate-x-0 lg:shadow-none"
+      class="fixed inset-y-0 left-0 z-50 flex h-screen max-h-screen min-h-0 w-[min(18rem,88vw)] flex-col overflow-hidden border-r border-slate-800/80 bg-slate-950 shadow-2xl shadow-violet-950/20 transition-transform duration-200 ease-out lg:sticky lg:top-0 lg:translate-x-0 lg:shadow-none"
       :class="navOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'"
       aria-label="Main navigation"
     >
-      <div class="border-b border-slate-800/80 bg-gradient-to-br from-slate-900 to-slate-950 px-5 py-6">
+      <div class="shrink-0 border-b border-slate-800/80 bg-gradient-to-br from-slate-900 to-slate-950 px-5 py-6">
         <p class="text-[0.65rem] font-semibold uppercase tracking-[0.2em] text-violet-400/90">NoobScribe</p>
         <h1 class="mt-1 text-xl font-bold tracking-tight text-white">Studio</h1>
         <p class="mt-1 text-xs leading-relaxed text-slate-500">Transcription, diarization &amp; speaker memory</p>
       </div>
-      <nav class="flex flex-1 flex-col gap-1 p-3">
+      <nav class="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto p-3">
         <button
           type="button"
           @click="go('/')"
@@ -118,7 +118,7 @@
           API docs
         </a>
       </nav>
-      <div class="border-t border-slate-800/80 p-4">
+      <div class="shrink-0 border-t border-slate-800/80 p-4">
         <div x-show="health && !healthError" class="space-y-1 text-xs text-slate-500" x-cloak>
           <div class="flex items-center gap-2">
             <span class="h-1.5 w-1.5 shrink-0 rounded-full" :class="health.model_loaded ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]' : 'bg-amber-400'"></span>
