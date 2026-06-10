@@ -136,6 +136,18 @@
       return fetch(apiBase() + "/v1/speakers").then(handle);
     },
 
+    rematchAllTranscriptions() {
+      return fetch(apiBase() + "/v1/speakers/rematch", { method: "POST" }).then(handle);
+    },
+
+    getNearestEmbeddings(embedding, limit) {
+      return fetch(apiBase() + "/v1/speakers/nearest-embeddings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ embedding: embedding, limit: limit != null ? limit : 3 }),
+      }).then(handle);
+    },
+
     createSpeaker(displayName, embedding) {
       return fetch(apiBase() + "/v1/speakers", {
         method: "POST",

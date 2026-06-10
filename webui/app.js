@@ -44,6 +44,8 @@ function noobScribeApp() {
     spError: null,
     /** Speakers page: accordion + embeddings */
     expandedSpeakers: {},
+    /** Transcript viewer: per-speaker accordion */
+    expandedTranscriptSpeakers: {},
     speakerEmbeddingsBySpeaker: {},
     embeddingsLoadingFor: null,
     snippetPanelKey: null,
@@ -76,6 +78,13 @@ function noobScribeApp() {
     saveSpeakerEmbedding: null,
     saveSpeakerBusy: false,
     saveSpeakerError: null,
+
+    /** Global rematch + nearest-neighbor panels */
+    rematchBusy: false,
+    rematchMessage: null,
+    openSpeakerNeighbors: {},
+    speakerNeighborsByKey: {},
+    speakerNeighborsLoadingKey: null,
 
     /** In-browser recording (#/record) */
     recorder: null,
@@ -753,6 +762,9 @@ function noobScribeApp() {
 
     async loadTranscription(rid, tid) {
       this.stopTranscriptSegmentPlayback();
+      this.expandedTranscriptSpeakers = {};
+      this.openSpeakerNeighbors = {};
+      this.speakerNeighborsByKey = {};
       this.trLoading = true;
       this.trError = null;
       this.transcription = null;
@@ -949,6 +961,8 @@ function noobScribeApp() {
     clearExtractResult() {
       this.extractResult = null;
       this.extractError = null;
+      this.openSpeakerNeighbors = {};
+      this.speakerNeighborsByKey = {};
     },
 
     discardSpExtractRecording() {
@@ -1316,6 +1330,118 @@ function noobScribeApp() {
       if (!id || id === "unknown") return id || "";
       const map = this.speakerMapFromTranscription();
       return map[id] != null ? map[id] : id;
+    },
+
+    transcriptSpeakerExpanded(speakerId) {
+      return !!this.expandedTranscriptSpeakers[speakerId];
+    },
+
+    toggleTranscriptSpeakerRow(speakerId) {
+      const next = !this.expandedTranscriptSpeakers[speakerId];
+      this.expandedTranscriptSpeakers = { ...this.expandedTranscriptSpeakers, [speakerId]: next };
+    },
+
+    segmentsForTranscriptSpeaker(speakerId) {
+      const segs = (this.transcription && this.transcription.segments) || [];
+      const norm = this.normalizeSpeakerId(speakerId);
+      if (!norm) return [];
+      return segs
+        .map((seg, idx) => ({ seg, idx }))
+        .filter(({ seg }) => this.normalizeSpeakerId(seg.speaker) === norm);
+    },
+
+    transcriptSpeakerSegmentCount(speakerId) {
+      return this.segmentsForTranscriptSpeaker(speakerId).length;
+    },
+
+    transcriptionSpeakersSorted() {
+      const list = (this.transcription && this.transcription.speakers) || [];
+      return list.slice().sort((a, b) => {
+        const ca = this.transcriptSpeakerSegmentCount(a.id);
+        const cb = this.transcriptSpeakerSegmentCount(b.id);
+        if (cb !== ca) return cb - ca;
+        return String(a.id).localeCompare(String(b.id));
+      });
+    },
+
+    formatMatchSimilarity(sim) {
+      if (sim == null || Number.isNaN(Number(sim))) return "";
+      return Math.round(Number(sim) * 100) + "%";
+    },
+
+    formatSimilarityThreshold(threshold) {
+      if (threshold == null || Number.isNaN(Number(threshold))) return "";
+      return Math.round(Number(threshold) * 100) + "%";
+    },
+
+    speakerNeighborsKey(context, speakerId) {
+      return String(context) + ":" + String(speakerId);
+    },
+
+    isSpeakerNeighborsOpen(context, speakerId) {
+      return !!this.openSpeakerNeighbors[this.speakerNeighborsKey(context, speakerId)];
+    },
+
+    neighborsCacheForSpeaker(context, speakerId) {
+      return this.speakerNeighborsByKey[this.speakerNeighborsKey(context, speakerId)] || null;
+    },
+
+    neighborsForSpeaker(context, speakerId) {
+      const cached = this.neighborsCacheForSpeaker(context, speakerId);
+      return (cached && cached.data) || [];
+    },
+
+    neighborsThresholdForSpeaker(context, speakerId) {
+      const cached = this.neighborsCacheForSpeaker(context, speakerId);
+      return cached ? cached.threshold : null;
+    },
+
+    async toggleSpeakerNeighbors(context, speakerRow) {
+      if (!speakerRow || !speakerRow.id) return;
+      const key = this.speakerNeighborsKey(context, speakerRow.id);
+      const next = !this.openSpeakerNeighbors[key];
+      this.openSpeakerNeighbors = { ...this.openSpeakerNeighbors, [key]: next };
+      if (next && !this.speakerNeighborsByKey[key] && speakerRow.embedding && speakerRow.embedding.length) {
+        await this.fetchSpeakerNeighbors(context, speakerRow);
+      }
+    },
+
+    async fetchSpeakerNeighbors(context, speakerRow) {
+      if (!speakerRow || !speakerRow.embedding || !speakerRow.embedding.length) return;
+      const key = this.speakerNeighborsKey(context, speakerRow.id);
+      this.speakerNeighborsLoadingKey = key;
+      try {
+        const res = await NoobScribeApi.getNearestEmbeddings(speakerRow.embedding, 3);
+        this.speakerNeighborsByKey = {
+          ...this.speakerNeighborsByKey,
+          [key]: { threshold: res.threshold, data: res.data || [] },
+        };
+      } catch (e) {
+        this.speakerNeighborsByKey = {
+          ...this.speakerNeighborsByKey,
+          [key]: { threshold: null, data: [], error: String(e.message || e) },
+        };
+      } finally {
+        this.speakerNeighborsLoadingKey = null;
+      }
+    },
+
+    async runGlobalRematch() {
+      this.rematchBusy = true;
+      this.rematchMessage = null;
+      try {
+        const res = await NoobScribeApi.rematchAllTranscriptions();
+        const n = (res && res.updated_transcriptions) || 0;
+        this.rematchMessage =
+          n === 1 ? "Updated 1 transcription" : "Updated " + n + " transcriptions";
+        if (this.route && this.route.name === "transcript" && this.route.recordingId && this.route.transcriptionId) {
+          await this.loadTranscription(this.route.recordingId, this.route.transcriptionId);
+        }
+      } catch (e) {
+        this.rematchMessage = String(e.message || e);
+      } finally {
+        this.rematchBusy = false;
+      }
     },
 
     _escapeRegExp(s) {

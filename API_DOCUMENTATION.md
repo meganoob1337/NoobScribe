@@ -56,7 +56,8 @@ Transcribe an audio file with optional speaker diarization. **ASR backend:** by 
       "id": "SPEAKER_00",
       "display_name": "John Doe",
       "embedding": [0.1, 0.2, 0.3, ...],
-      "matched": true
+      "matched": true,
+      "match_similarity": 0.9124
     }
   ]
 }
@@ -69,6 +70,7 @@ Transcribe an audio file with optional speaker diarization. **ASR backend:** by 
   - `display_name` (string, optional): Display name if matched to a stored speaker
   - `embedding` (array[float]): Speaker embedding vector
   - `matched` (boolean): Whether speaker was matched to a stored identity
+  - `match_similarity` (float, optional): Cosine similarity to the best stored speaker match (present when `matched` is true)
 
 ##### Verbose JSON
 
@@ -101,7 +103,8 @@ Transcribe an audio file with optional speaker diarization. **ASR backend:** by 
       "id": "SPEAKER_00",
       "display_name": "John Doe",
       "embedding": [0.1, 0.2, 0.3, ...],
-      "matched": true
+      "matched": true,
+      "match_similarity": 0.9124
     }
   ]
 }
@@ -223,6 +226,7 @@ Check the health status of the API and the loaded model.
   "status": "ok",
   "version": "1.0.0",
   "model_loaded": true,
+  "speaker_db_initialized": true,
   "model_id": "nvidia/canary-1b-v2",
   "force_cpu": false,
   "cuda_available": true,
@@ -247,6 +251,7 @@ Check the health status of the API and the loaded model.
 - `status` (string): Always "ok" if the API is running
 - `version` (string): API version
 - `model_loaded` (boolean): Whether transcription is ready: **true** if the local NeMo ASR is loaded **or** if **`USE_API`** is enabled (remote STT; no local ASR weights). **false** only when local ASR failed to load and API mode is off.
+- `speaker_db_initialized` (boolean): Whether the Chroma speaker embedding store is available. The health check attempts lazy initialization if startup failed; **false** means speaker CRUD, rematch, and nearest-embedding endpoints return **503** (see server logs and `CHROMADB_PATH`).
 - `model_id` (string): Configured **`MODEL_ID`** (NeMo id in local mode; remote `model` name in API mode)
 - `force_cpu` (boolean): Whether `FORCE_CPU` is set, forcing CPU inference even if a GPU is present
 - `cuda_available` (boolean): Whether the server will use CUDA/GPU for inference (false when `force_cpu` is true or no GPU is available)
@@ -388,6 +393,89 @@ print(response.json())
 
 - `200 OK`: Request successful
 - `500 Internal Server Error`: Failed to retrieve speakers
+- **503 Service Unavailable**: Speaker database not initialized
+
+---
+
+### Re-match stored transcriptions
+
+Re-run speaker matching for every stored transcription that has diarization `speakers` JSON. Updates persisted `display_name`, `matched`, and `match_similarity` on each speaker row with an `embedding` (same logic as the side effect after `POST` / `PUT` / `DELETE` on `/v1/speakers`).
+
+**Endpoint:** `POST /v1/speakers/rematch`
+
+**Content-Type:** `application/json`
+
+#### Response Schema
+
+```json
+{
+  "updated_transcriptions": 3
+}
+```
+
+**Response Fields:**
+- `updated_transcriptions` (integer): Number of transcription rows whose `speakers_json` was changed
+
+#### Status Codes
+
+- `200 OK`: Rematch completed (including when zero rows changed)
+- `500 Internal Server Error`: Rematch failed
+- `503 Service Unavailable`: Speaker database not initialized
+
+---
+
+### Nearest stored embeddings
+
+Return the nearest stored speaker **embeddings** (individual Chroma rows) to a query vector, regardless of whether they meet `SPEAKER_SIMILARITY_THRESHOLD`.
+
+**Endpoint:** `POST /v1/speakers/nearest-embeddings`
+
+**Content-Type:** `application/json`
+
+#### Request Body Schema
+
+```json
+{
+  "embedding": [0.1, 0.2, 0.3],
+  "limit": 3
+}
+```
+
+**Request Fields:**
+- `embedding` (array[float], required): Query embedding vector (non-empty)
+- `limit` (integer, optional): Number of hits to return (default `3`, clamped to 1–10)
+
+#### Response Schema
+
+```json
+{
+  "threshold": 0.7,
+  "data": [
+    {
+      "speaker_id": "550e8400-e29b-41d4-a716-446655440000",
+      "display_name": "John Doe",
+      "embedding_index": 0,
+      "similarity": 0.9124,
+      "meets_threshold": true
+    }
+  ]
+}
+```
+
+**Response Fields:**
+- `threshold` (float): Configured `SPEAKER_SIMILARITY_THRESHOLD`
+- `data` (array): Nearest hits, best match first
+  - `speaker_id` (string): Stored speaker UUID
+  - `display_name` (string): Enrolled speaker name
+  - `embedding_index` (integer): Which enrollment embedding matched
+  - `similarity` (float): Cosine similarity (0–1)
+  - `meets_threshold` (boolean): Whether `similarity >= threshold`
+
+#### Status Codes
+
+- `200 OK`: Query successful (empty `data` when no enrollments exist)
+- `400 Bad Request`: Missing or invalid embedding
+- `500 Internal Server Error`: Query failed
 - `503 Service Unavailable`: Speaker database not initialized
 
 ---
@@ -439,7 +527,7 @@ Create a new speaker with a display name and initial embedding.
 - `display_name` (string, required): Human-readable name for the speaker
 - `embedding` (array[float], required): Speaker embedding vector (typically 512 or 1024 dimensions)
 
-**Side effect:** After a successful create, the server **re-matches** every stored recording transcription that has a `speakers` array: for each diarized row with an `embedding`, it runs the same similarity check as live transcription (`SPEAKER_SIMILARITY_THRESHOLD`) against the Chroma speaker index and **updates persisted** `display_name` / `matched` in SQLite. No extra request fields are required. This can add latency when many transcripts exist (one vector query per diarized speaker row).
+**Side effect:** After a successful create, the server **re-matches** every stored recording transcription that has a `speakers` array: for each diarized row with an `embedding`, it runs the same similarity check as live transcription (`SPEAKER_SIMILARITY_THRESHOLD`) against the Chroma speaker index and **updates persisted** `display_name`, `matched`, and `match_similarity` in SQLite. No extra request fields are required. This can add latency when many transcripts exist (one vector query per diarized speaker row).
 
 #### Response Schema
 
@@ -851,7 +939,7 @@ Other formats (`text`, `srt`, `vtt`) return plain text as today.
 
 ## Web UI
 
-A minimal SPA is served at **`/ui`** (same host as the API). Open `/ui` in a browser to upload recordings, **record in the browser** (mix window/tab or screen capture audio with the microphone, then upload as WebM), run transcription/diarization, inspect segments, save speaker embeddings to `/v1/speakers`, and manage stored speakers. On **Speakers**, **From audio snippet** uploads or records a short clip, calls **`POST /v1/speakers/extract-from-audio`** (hidden stored recording + diarization), then lets you **Save as…** for each detected speaker like the transcript view. The **Speakers** page also uses expandable rows: each speaker lists **enrollments** (embedding index), matching **transcriptions** with an **Audio snippet** control (loads `GET /v1/audio/snippet` only when clicked), and **Delete embedding** per enrollment. Saving a speaker triggers a **global re-match** of stored transcript diarization metadata so existing transcripts can show updated names without re-transcribing.
+A minimal SPA is served at **`/ui`** (same host as the API). Open `/ui` in a browser to upload recordings, **record in the browser** (mix window/tab or screen capture audio with the microphone, then upload as WebM), run transcription/diarization, inspect segments, save speaker embeddings to `/v1/speakers`, and manage stored speakers. On the **transcript viewer**, diarized **Speakers** use expandable accordion rows (segment count, matched similarity, **≈ nearest** popover for top stored embedding hits vs threshold, per-speaker segment snippets with audio play) and a **Re-match transcripts** control (`POST /v1/speakers/rematch`). On **Speakers**, **From audio snippet** uploads or records a short clip, calls **`POST /v1/speakers/extract-from-audio`** (hidden stored recording + diarization), then lets you **Save as…** for each detected speaker like the transcript view. The **Speakers** page header also offers **Re-match transcripts** and uses expandable rows: each speaker lists **enrollments** (embedding index), matching **transcriptions** with an **Audio snippet** control (loads `GET /v1/audio/snippet` only when clicked), and **Delete embedding** per enrollment. Saving a speaker triggers a **global re-match** of stored transcript diarization metadata so existing transcripts can show updated names and similarity without re-transcribing.
 
 ---
 
@@ -935,6 +1023,7 @@ interface SpeakerInfo {
   display_name?: string;         // Display name if matched
   embedding: number[];           // Embedding vector
   matched: boolean;              // Whether matched to stored identity
+  match_similarity?: number;     // Cosine similarity when matched (0–1)
 }
 ```
 
@@ -999,6 +1088,52 @@ interface SpeakerList {
 }
 ```
 
+### SpeakerRematchResponse
+
+Result of manual global rematch.
+
+```typescript
+interface SpeakerRematchResponse {
+  updated_transcriptions: number;
+}
+```
+
+### SpeakerNearestRequest
+
+Nearest-neighbor query for stored embeddings.
+
+```typescript
+interface SpeakerNearestRequest {
+  embedding: number[];
+  limit?: number;              // default 3, max 10
+}
+```
+
+### SpeakerNearestMatch
+
+One nearest stored embedding hit.
+
+```typescript
+interface SpeakerNearestMatch {
+  speaker_id: string;
+  display_name: string;
+  embedding_index: number;
+  similarity: number;
+  meets_threshold: boolean;
+}
+```
+
+### SpeakerNearestResponse
+
+Nearest-neighbor query result.
+
+```typescript
+interface SpeakerNearestResponse {
+  threshold: number;
+  data: SpeakerNearestMatch[];
+}
+```
+
 ### ModelInfo
 
 Information about an available model.
@@ -1024,6 +1159,7 @@ interface HealthResponse {
   status: string;              // Always "ok"
   version: string;
   model_loaded: boolean;
+  speaker_db_initialized: boolean;
   model_id: string;
   cuda_available: boolean;
   gpu_info?: string;

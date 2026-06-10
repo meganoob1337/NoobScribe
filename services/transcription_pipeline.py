@@ -161,6 +161,7 @@ def run_transcription_pipeline(
                 if speaker_id.startswith("SPEAKER_") and speaker_id != "unknown":
                     speakers_with_segments.add(speaker_id)
 
+        threshold = config.speaker_similarity_threshold
         speakers_list = []
         for speaker_id, embedding in diarization_result.embeddings.items():
             if speaker_id not in speakers_with_segments:
@@ -168,17 +169,20 @@ def run_transcription_pipeline(
             embedding_list = embedding.tolist() if hasattr(embedding, "tolist") else list(embedding)
             display_name = None
             matched = False
-            if speaker_mapping:
-                mapped_name = speaker_mapping.get(speaker_id)
-                if mapped_name and mapped_name != speaker_id:
-                    display_name = mapped_name
+            match_similarity = None
+            if speaker_db:
+                best, similarity = speaker_db.query_best_match(embedding)
+                if best and similarity >= threshold:
+                    display_name = best.display_name
                     matched = True
+                    match_similarity = round(float(similarity), 4)
             speakers_list.append(
                 SpeakerInfo(
                     id=speaker_id,
                     display_name=display_name,
                     embedding=embedding_list,
                     matched=matched,
+                    match_similarity=match_similarity,
                 )
             )
 

@@ -82,6 +82,7 @@ def _require_asr_model():
 def _speaker_db():
     import api as api_module
 
+    api_module.init_speaker_db()
     return api_module.speaker_db
 
 

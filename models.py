@@ -26,6 +26,7 @@ class SpeakerInfo(BaseModel):
     display_name: Optional[str] = None  # Display name if matched to stored speaker
     embedding: List[float]  # The embedding vector
     matched: bool  # Whether speaker was matched to stored identity
+    match_similarity: Optional[float] = None  # Cosine similarity when matched
 
 class TranscriptionResponse(BaseModel):
     """Represents the response format for transcription"""
@@ -86,6 +87,36 @@ class SpeakerList(BaseModel):
     """List of speakers"""
     object: str = "list"
     data: List[SpeakerResponse]
+
+
+class SpeakerRematchResponse(BaseModel):
+    """Result of re-matching all stored transcription speaker rows."""
+
+    updated_transcriptions: int
+
+
+class SpeakerNearestRequest(BaseModel):
+    """Find nearest stored speaker embeddings to a query vector."""
+
+    embedding: List[float]
+    limit: int = 3
+
+
+class SpeakerNearestMatch(BaseModel):
+    """One stored embedding hit from a nearest-neighbor query."""
+
+    speaker_id: str
+    display_name: str
+    embedding_index: int
+    similarity: float
+    meets_threshold: bool
+
+
+class SpeakerNearestResponse(BaseModel):
+    """Nearest stored embeddings for a query vector."""
+
+    threshold: float
+    data: List[SpeakerNearestMatch]
 
 
 class SpeakerEmbeddingDetail(BaseModel):

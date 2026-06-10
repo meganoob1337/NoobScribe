@@ -76,7 +76,7 @@ docker run --gpus all -p 8000:8000 \
   noobscribe-api
 ```
 
-Pinned dependencies for the image are in **`requirements.lock.txt`** (installed in the Dockerfile).
+Pinned dependencies for the **CPU** image are in **`requirements.lock.txt`** ([`Dockerfile.cpu`](Dockerfile.cpu)). The **GPU** image installs from [`requirements.txt`](requirements.txt) and then force-reinstalls the PyTorch cu130 stack ([`Dockerfile`](Dockerfile)).
 
 ## Environment variables
 

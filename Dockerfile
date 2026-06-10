@@ -24,8 +24,19 @@ COPY requirements.txt requirements.txt
 RUN python3 -m venv venv
 RUN . venv/bin/activate && pip install --upgrade pip
 RUN --mount=type=cache,target=/root/.cache/pip \
- . venv/bin/activate && pip install -r requirements.txt     --extra-index-url https://download.pytorch.org/whl/cu130
+    . venv/bin/activate && pip install -r requirements.txt \
+    --extra-index-url https://download.pytorch.org/whl/cu130
 
+RUN --mount=type=cache,target=/root/.cache/pip \
+    . venv/bin/activate && pip install --upgrade --force-reinstall \
+    torch torchaudio torchvision \
+    --index-url https://download.pytorch.org/whl/cu130 \
+    --extra-index-url https://pypi.org/simple
+
+RUN . venv/bin/activate && python -c "\
+import torch; \
+assert '+cu130' in torch.__version__, torch.__version__; \
+assert torch.version.cuda and torch.version.cuda.startswith('13'), torch.version.cuda"
 
 # Copy application code
 COPY . .

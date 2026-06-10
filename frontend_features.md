@@ -83,7 +83,7 @@ Rebuild note: permissions UX, codec support, and “tab vs window” audio behav
 - **Formatted body**: If `segments[]` exists, builds text with **one segment per paragraph**: `[resolved_label] body`, where label comes from `transcription.speakers[]` (`display_name` or id). **Strips** a leading duplicate speaker prefix from segment text (e.g. `SPEAKER_00: `) when it matches the segment’s diarization id (case-insensitive). Unknown speaker id still shows body only. If no segments, falls back to `full_text`.
 - **Copy**: Copies the full `formattedTranscript()` output to the clipboard via `navigator.clipboard.writeText()`; shows a brief "Copied!" confirmation that auto-hides after 2 seconds.
 - **Download**: Client-side **Blob** download as `transcription-<sanitized-id>.txt` from `formattedTranscript()` output.
-- **Speakers block**: For each entry in `transcription.speakers` with a non-empty `embedding`, show id, optional `display_name`, “matched” badge, **Save as…** → opens the same “save embedding” flow as on the Speakers page (load speakers list, choose existing or new name, POST/PUT).
+- **Speakers block**: Expandable accordion rows (sorted by segment count, highest first). Each header shows diarization id, optional `display_name`, **segment count** badge, “matched” badge with **similarity percentage** (`match_similarity`, e.g. `87%`) when matched, **≈ nearest** icon (lazy-loads top 3 stored embedding hits via `POST /v1/speakers/nearest-embeddings` with threshold and matched/below labels), and **Save as…** (when embedding exists; does not toggle the row). Header also has **Re-match transcripts** (`POST /v1/speakers/rematch`); on success reloads the current transcription. Expanding a row lists that speaker’s segments only: time range, stripped text preview, and **play** control (same snippet API as the Segments list below). State resets when loading another transcription.
 - **Segments list**: Per segment: time range (`start`–`end`, one decimal), resolved speaker label, stripped text, and optional **play** control if `start`/`end` are valid numbers and `end > start`.
   - **Snippet playback**: Single shared `Audio` element, `preload="none"`. Play uses `GET /v1/audio/snippet?recording_id=&start=&end=`. Tapping same segment while playing pauses; switching segment sets new `src` and plays.
 
@@ -92,6 +92,7 @@ Rebuild note: permissions UX, codec support, and “tab vs window” audio behav
 ### List and CRUD
 
 - **Load**: `GET /v1/speakers` → list with `display_name`, `id`, `embedding_count`.
+- **Re-match transcripts**: Button in page header → `POST /v1/speakers/rematch`; shows count of updated transcriptions (`updated_transcriptions`).
 - **Delete speaker**: Confirm → `DELETE /v1/speakers/:id`; clears expanded row state and cached snippet panels for that speaker.
 
 ### Collapsible “Add or update speaker embedding”
@@ -102,7 +103,7 @@ Two tabs:
    - Optional label field (`extractSnippetName`).
    - Source: **file** input or **in-page mic record** (simple `MediaRecorder` on mic-only stream, WebM blob + preview URL).
    - **Extract**: `POST /v1/speakers/extract-from-audio` multipart with file, optional `name`, `response_format: verbose_json`, `timestamps: true`, `word_timestamps: false`, `diarize: true`, `include_diarization_in_text: false`, `temperature: 0`.
-   - Shows optional `recording_id` note (hidden enrollment recording), formatted transcript preview (`extractFormattedTranscript()` — same bracket/strip rules as main transcript), and **Detected speakers** with **Save as…** per speaker with embedding.
+   - Shows optional `recording_id` note (hidden enrollment recording), formatted transcript preview (`extractFormattedTranscript()` — same bracket/strip rules as main transcript), and **Detected speakers** with **≈ nearest** icon (same nearest-embeddings popover as transcript speakers), **Save as…** per speaker with embedding.
    - If no speaker has a non-empty `embedding` array, sets a helpful **error message** (diarization/embeddings unavailable, clip quality, etc.).
 
 2. **Manual embedding**
@@ -125,7 +126,8 @@ Two tabs:
 
 - **Errors**: Read body as text; if JSON, prefer `detail` for message; throw `Error` with that string.
 - **Success**: Parse JSON if body non-empty; empty body → `null`.
-- **`createRecording`**: Supports optional `hide_in_recordings` form field — **not** used by current UI paths shown in `index.html`, but the client exposes it for parity with the API.
+- **`rematchAllTranscriptions`**: `POST /v1/speakers/rematch` — returns `{ updated_transcriptions }`.
+- **`getNearestEmbeddings(embedding, limit?)`**: `POST /v1/speakers/nearest-embeddings` — returns `{ threshold, data[] }` with per-hit `meets_threshold`.
 
 ## Data shapes the UI expects (informal)
 

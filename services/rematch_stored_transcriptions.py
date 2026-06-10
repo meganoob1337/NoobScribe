@@ -22,18 +22,33 @@ def _norm_display_name(v: Any) -> Optional[str]:
     return s if s else None
 
 
+def _norm_similarity(v: Any) -> Optional[float]:
+    if v is None:
+        return None
+    try:
+        return round(float(v), 4)
+    except (TypeError, ValueError):
+        return None
+
+
 def _meta_changed(before: dict, after: dict) -> bool:
-    return _norm_display_name(before.get("display_name")) != _norm_display_name(
-        after.get("display_name")
-    ) or bool(before.get("matched")) != bool(after.get("matched"))
+    return (
+        _norm_display_name(before.get("display_name")) != _norm_display_name(
+            after.get("display_name")
+        )
+        or bool(before.get("matched")) != bool(after.get("matched"))
+        or _norm_similarity(before.get("match_similarity"))
+        != _norm_similarity(after.get("match_similarity"))
+    )
 
 
 def rematch_transcription_speakers_json(
     speakers_json: Optional[List[Any]], speaker_db: SpeakerDB
 ) -> Tuple[Optional[List[Any]], bool]:
     """
-    For each speaker dict with an ``embedding``, set ``display_name`` / ``matched`` via
-    ``SpeakerDB.find_similar_speaker``. Rows without ``embedding`` are left unchanged.
+    For each speaker dict with an ``embedding``, set ``display_name`` / ``matched`` /
+    ``match_similarity`` via ``SpeakerDB.query_best_match``. Rows without ``embedding``
+    are left unchanged.
 
     Returns:
         (possibly_new_list, changed) — if not changed, returns the original ``speakers_json``.
@@ -69,14 +84,17 @@ def rematch_transcription_speakers_json(
             new_list.append(item)
             continue
 
-        match = speaker_db.find_similar_speaker(emb)
+        threshold = speaker_db.similarity_threshold
+        best, similarity = speaker_db.query_best_match(emb)
         new_item = dict(item)
-        if match:
-            new_item["display_name"] = match.display_name
+        if best and similarity >= threshold:
+            new_item["display_name"] = best.display_name
             new_item["matched"] = True
+            new_item["match_similarity"] = round(float(similarity), 4)
         else:
             new_item["display_name"] = None
             new_item["matched"] = False
+            new_item["match_similarity"] = None
 
         if _meta_changed(item, new_item):
             changed = True

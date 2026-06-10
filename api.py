@@ -31,6 +31,10 @@ from models import (
     SpeakerEmbeddingDetail,
     SpeakerEmbeddingListResponse,
     SpeakerList,
+    SpeakerNearestMatch,
+    SpeakerNearestRequest,
+    SpeakerNearestResponse,
+    SpeakerRematchResponse,
     SpeakerResponse,
     SpeakerUpdate,
 )
@@ -53,9 +57,40 @@ asr_model = None
 
 # Global variable for speaker database
 speaker_db = None
+_speaker_db_init_error: Optional[str] = None
 
 # Get configuration
 config = get_config()
+
+
+def init_speaker_db() -> bool:
+    """Initialize Chroma speaker store (idempotent). Returns True on success."""
+    global speaker_db, _speaker_db_init_error
+    if speaker_db is not None:
+        return True
+    try:
+        speaker_db = SpeakerDB(
+            db_path=config.chromadb_path,
+            similarity_threshold=config.speaker_similarity_threshold,
+        )
+        _speaker_db_init_error = None
+        logger.info("Speaker database initialized at %s", config.chromadb_path)
+        return True
+    except Exception as e:
+        _speaker_db_init_error = str(e)
+        speaker_db = None
+        logger.error("Failed to initialize speaker database: %s", _speaker_db_init_error)
+        return False
+
+
+def require_speaker_db() -> SpeakerDB:
+    """Return speaker DB or raise 503 with the last init error when unavailable."""
+    if not init_speaker_db():
+        detail = "Speaker database not initialized"
+        if _speaker_db_init_error:
+            detail += f": {_speaker_db_init_error}"
+        raise HTTPException(status_code=503, detail=detail)
+    return speaker_db
 
 
 class WebUiStaticFiles(StaticFiles):
@@ -90,7 +125,7 @@ def create_app() -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        global asr_model, speaker_db
+        global asr_model
 
         init_engine()
         await init_db()
@@ -113,29 +148,20 @@ def create_app() -> FastAPI:
             else:
                 asr_model = load_model(model_id, model_path=config.model_path)
                 logger.info("ASR model loaded (%s)", config.model_path or model_id)
-
-            try:
-                speaker_db = SpeakerDB(
-                    db_path=config.chromadb_path,
-                    similarity_threshold=config.speaker_similarity_threshold,
-                )
-                logger.info("Speaker database initialized at %s", config.chromadb_path)
-            except Exception as e:
-                logger.error("Failed to initialize speaker database: %s", str(e))
-                speaker_db = None
-
-            if config.diarization_model_path:
-                logger.info(
-                    "Local diarization model path set; offline diarization available without HF token"
-                )
-            hf_token = config.get_hf_token()
-            if hf_token:
-                logger.info("HuggingFace access token found; remote diarization models available")
-            else:
-                logger.info("No HuggingFace access token (use DIARIZATION_MODEL_PATH for offline)")
-
         except Exception as e:
-            logger.error("Error during startup: %s", str(e))
+            logger.error("Error loading ASR model during startup: %s", str(e))
+
+        init_speaker_db()
+
+        if config.diarization_model_path:
+            logger.info(
+                "Local diarization model path set; offline diarization available without HF token"
+            )
+        hf_token = config.get_hf_token()
+        if hf_token:
+            logger.info("HuggingFace access token found; remote diarization models available")
+        else:
+            logger.info("No HuggingFace access token (use DIARIZATION_MODEL_PATH for offline)")
 
         yield
 
@@ -207,6 +233,7 @@ def create_app() -> FastAPI:
 
             wav_file = convert_audio_to_wav(str(temp_file))
 
+            init_speaker_db()
             pr = run_transcription_pipeline(
                 wav_file,
                 asr_model,
@@ -272,6 +299,7 @@ def create_app() -> FastAPI:
             "status": "ok",
             "version": "1.0.0",
             "model_loaded": asr_model is not None or getattr(config, "use_api", False),
+            "speaker_db_initialized": init_speaker_db(),
             "model_id": config.model_id,
             "force_cpu": config.force_cpu,
             "cuda_available": use_cuda(),
@@ -316,13 +344,10 @@ def create_app() -> FastAPI:
         """
         Get all speakers in the database
         """
-        global speaker_db
-
-        if speaker_db is None:
-            raise HTTPException(status_code=503, detail="Speaker database not initialized")
+        db = require_speaker_db()
 
         try:
-            speakers = speaker_db.get_all_speakers()
+            speakers = db.get_all_speakers()
             speaker_responses = [
                 SpeakerResponse(
                     id=speaker.id,
@@ -336,6 +361,69 @@ def create_app() -> FastAPI:
         except Exception as e:
             logger.error("Error listing speakers: %s", str(e))
             raise HTTPException(status_code=500, detail=f"Failed to list speakers: {str(e)}")
+
+    @app.post("/v1/speakers/rematch", response_model=SpeakerRematchResponse)
+    async def rematch_stored_speakers(session: AsyncSession = Depends(get_session)):
+        """
+        Re-match every stored transcription's diarization speaker rows against the
+        current Chroma speaker index (same logic as after speaker create/update/delete).
+        """
+        db = require_speaker_db()
+
+        try:
+            n = await rematch_all_stored_transcriptions(session, db)
+            if n:
+                logger.info("Rematched speakers_json on %s stored transcriptions (manual rematch)", n)
+            return SpeakerRematchResponse(updated_transcriptions=n)
+        except Exception as e:
+            logger.error("Error rematching stored transcriptions: %s", str(e))
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to rematch stored transcriptions: {str(e)}",
+            )
+
+    @app.post("/v1/speakers/nearest-embeddings", response_model=SpeakerNearestResponse)
+    async def nearest_speaker_embeddings(body: SpeakerNearestRequest):
+        """
+        Return the nearest stored speaker embeddings to a query vector, regardless
+        of whether they meet the configured similarity threshold.
+        """
+        db = require_speaker_db()
+
+        if not body.embedding:
+            raise HTTPException(status_code=400, detail="embedding must be a non-empty array")
+
+        try:
+            emb = np.asarray(body.embedding, dtype=np.float32)
+            if emb.size == 0:
+                raise HTTPException(status_code=400, detail="embedding must be a non-empty array")
+        except (TypeError, ValueError) as e:
+            raise HTTPException(status_code=400, detail=f"Invalid embedding: {e}") from e
+
+        threshold = config.speaker_similarity_threshold
+        try:
+            hits = db.query_nearest_embeddings(emb, limit=body.limit)
+            return SpeakerNearestResponse(
+                threshold=threshold,
+                data=[
+                    SpeakerNearestMatch(
+                        speaker_id=h["speaker_id"],
+                        display_name=h["display_name"],
+                        embedding_index=h["embedding_index"],
+                        similarity=h["similarity"],
+                        meets_threshold=h["similarity"] >= threshold,
+                    )
+                    for h in hits
+                ],
+            )
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error("Error querying nearest embeddings: %s", str(e))
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to query nearest embeddings: {str(e)}",
+            )
 
     @app.post("/v1/speakers/extract-from-audio")
     async def extract_speaker_embeddings_from_audio(
@@ -356,7 +444,7 @@ def create_app() -> FastAPI:
         and transcript (same shape as stored recording transcribe verbose_json).
         """
         _ = temperature
-        global asr_model, speaker_db
+        global asr_model
 
         cfg = get_config()
         if asr_model is None and not getattr(cfg, "use_api", False):
@@ -400,6 +488,7 @@ def create_app() -> FastAPI:
         await session.flush()
 
         try:
+            init_speaker_db()
             pr = run_transcription_for_recording_path(
                 rec.file_path,
                 asr_model,
@@ -449,21 +538,18 @@ def create_app() -> FastAPI:
         """
         Create a new speaker with a display name and initial embedding
         """
-        global speaker_db
-
-        if speaker_db is None:
-            raise HTTPException(status_code=503, detail="Speaker database not initialized")
+        db = require_speaker_db()
 
         try:
             embedding = np.array(speaker_data.embedding, dtype=np.float32)
-            speaker_id = speaker_db.create_speaker(
+            speaker_id = db.create_speaker(
                 display_name=speaker_data.display_name,
                 embedding=embedding,
             )
-            speaker = speaker_db.get_speaker_by_id(speaker_id)
+            speaker = db.get_speaker_by_id(speaker_id)
             if not speaker:
                 raise HTTPException(status_code=500, detail="Failed to retrieve created speaker")
-            n = await rematch_all_stored_transcriptions(session, speaker_db)
+            n = await rematch_all_stored_transcriptions(session, db)
             if n:
                 logger.info("Rematched speakers_json on %s stored transcriptions after create_speaker", n)
             return SpeakerResponse(
@@ -487,20 +573,17 @@ def create_app() -> FastAPI:
         """
         Add an additional embedding to an existing speaker
         """
-        global speaker_db
-
-        if speaker_db is None:
-            raise HTTPException(status_code=503, detail="Speaker database not initialized")
+        db = require_speaker_db()
 
         try:
             embedding = np.array(speaker_data.embedding, dtype=np.float32)
-            success = speaker_db.add_embedding(speaker_id, embedding)
+            success = db.add_embedding(speaker_id, embedding)
             if not success:
                 raise HTTPException(status_code=404, detail=f"Speaker {speaker_id} not found")
-            speaker = speaker_db.get_speaker_by_id(speaker_id)
+            speaker = db.get_speaker_by_id(speaker_id)
             if not speaker:
                 raise HTTPException(status_code=500, detail="Failed to retrieve updated speaker")
-            n = await rematch_all_stored_transcriptions(session, speaker_db)
+            n = await rematch_all_stored_transcriptions(session, db)
             if n:
                 logger.info("Rematched speakers_json on %s stored transcriptions after update_speaker", n)
             return SpeakerResponse(
@@ -520,17 +603,14 @@ def create_app() -> FastAPI:
         """
         List metadata for each enrolled embedding (index and created_at).
         """
-        global speaker_db
+        db = require_speaker_db()
 
-        if speaker_db is None:
-            raise HTTPException(status_code=503, detail="Speaker database not initialized")
-
-        sp = speaker_db.get_speaker_by_id(speaker_id)
+        sp = db.get_speaker_by_id(speaker_id)
         if not sp:
             raise HTTPException(status_code=404, detail=f"Speaker {speaker_id} not found")
 
         try:
-            rows = speaker_db.get_speaker_embeddings(speaker_id)
+            rows = db.get_speaker_embeddings(speaker_id)
             return SpeakerEmbeddingListResponse(
                 speaker_id=speaker_id,
                 display_name=sp.display_name,
@@ -563,18 +643,15 @@ def create_app() -> FastAPI:
         embedding matches (cosine similarity >= threshold) and return preview URLs for
         one matching segment per transcription.
         """
-        global speaker_db
+        db = require_speaker_db()
 
-        if speaker_db is None:
-            raise HTTPException(status_code=503, detail="Speaker database not initialized")
-
-        if speaker_db.get_speaker_by_id(speaker_id) is None:
+        if db.get_speaker_by_id(speaker_id) is None:
             raise HTTPException(status_code=404, detail=f"Speaker {speaker_id} not found")
 
         try:
             raw = await collect_snippets_for_enrolled_embedding(
                 session,
-                speaker_db,
+                db,
                 speaker_id,
                 embedding_index,
                 config.speaker_similarity_threshold,
@@ -617,12 +694,9 @@ def create_app() -> FastAPI:
         Remove one enrolled embedding. The last embedding cannot be deleted; delete the
         speaker instead. Triggers re-match of stored transcription speaker metadata.
         """
-        global speaker_db
+        db = require_speaker_db()
 
-        if speaker_db is None:
-            raise HTTPException(status_code=503, detail="Speaker database not initialized")
-
-        ok, reason = speaker_db.delete_embedding(speaker_id, embedding_index)
+        ok, reason = db.delete_embedding(speaker_id, embedding_index)
         if not ok:
             if reason == "last_embedding":
                 raise HTTPException(
@@ -635,7 +709,7 @@ def create_app() -> FastAPI:
             )
 
         try:
-            n = await rematch_all_stored_transcriptions(session, speaker_db)
+            n = await rematch_all_stored_transcriptions(session, db)
             if n:
                 logger.info(
                     "Rematched speakers_json on %s stored transcriptions after delete_embedding",
@@ -694,13 +768,10 @@ def create_app() -> FastAPI:
         """
         Delete a speaker and all its embeddings from the database
         """
-        global speaker_db
-
-        if speaker_db is None:
-            raise HTTPException(status_code=503, detail="Speaker database not initialized")
+        db = require_speaker_db()
 
         try:
-            success = speaker_db.delete_speaker(speaker_id)
+            success = db.delete_speaker(speaker_id)
             if not success:
                 raise HTTPException(status_code=404, detail=f"Speaker {speaker_id} not found")
             return JSONResponse(

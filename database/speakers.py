@@ -128,6 +128,80 @@ class SpeakerDB:
         logger.info(f"Added embedding {next_index} to speaker {speaker_id}")
         return True
     
+    def query_nearest_embeddings(
+        self, embedding: np.ndarray, limit: int = 3
+    ) -> List[Dict[str, Any]]:
+        """
+        Query ChromaDB for the nearest stored embeddings regardless of threshold.
+
+        Returns:
+            List of dicts with speaker_id, display_name, embedding_index, similarity
+            (best match first). Empty when the collection has no embeddings.
+        """
+        limit = max(1, min(int(limit), 10))
+        embedding_list = embedding.tolist() if isinstance(embedding, np.ndarray) else embedding
+
+        try:
+            count = self.collection.count()
+        except Exception:
+            count = 0
+        if count <= 0:
+            return []
+
+        n_results = min(limit, count)
+        results = self.collection.query(
+            query_embeddings=[embedding_list],
+            n_results=n_results,
+            include=["metadatas", "distances"],
+        )
+
+        if not results["ids"] or not results["ids"][0]:
+            return []
+
+        out: List[Dict[str, Any]] = []
+        for i, chroma_id in enumerate(results["ids"][0]):
+            metadata = results["metadatas"][0][i]
+            distance = results["distances"][0][i]
+            similarity = round(float(1 - distance), 4)
+            emb_idx = metadata.get("embedding_index")
+            if emb_idx is None and chroma_id and "_" in str(chroma_id):
+                try:
+                    emb_idx = int(str(chroma_id).rsplit("_", 1)[-1])
+                except ValueError:
+                    emb_idx = 0
+            out.append(
+                {
+                    "speaker_id": str(metadata.get("speaker_id", "")),
+                    "display_name": str(metadata.get("display_name", "")),
+                    "embedding_index": int(emb_idx if emb_idx is not None else 0),
+                    "similarity": similarity,
+                }
+            )
+        return out
+
+    def query_best_match(self, embedding: np.ndarray) -> Tuple[Optional[Speaker], float]:
+        """
+        Query ChromaDB for the best cosine match regardless of threshold.
+
+        Returns:
+            (Speaker, similarity) when a stored embedding exists; (None, 0.0) otherwise.
+        """
+        hits = self.query_nearest_embeddings(embedding, limit=1)
+        if not hits:
+            return None, 0.0
+
+        hit = hits[0]
+        speaker_id = hit["speaker_id"]
+        all_embeddings = self.collection.get(where={"speaker_id": speaker_id})
+        first_meta = all_embeddings["metadatas"][0] if all_embeddings.get("metadatas") else {}
+
+        return Speaker(
+            id=speaker_id,
+            display_name=hit["display_name"] or first_meta.get("display_name", ""),
+            created_at=str(first_meta.get("created_at", "")),
+            embedding_count=len(all_embeddings["ids"]),
+        ), float(hit["similarity"])
+
     def find_similar_speaker(self, embedding: np.ndarray, threshold: Optional[float] = None) -> Optional[Speaker]:
         """
         Find a speaker with similar embedding using cosine similarity
@@ -141,42 +215,10 @@ class SpeakerDB:
         """
         if threshold is None:
             threshold = self.similarity_threshold
-        
-        # Convert embedding to list
-        embedding_list = embedding.tolist() if isinstance(embedding, np.ndarray) else embedding
-        
-        # Query ChromaDB for similar embeddings
-        results = self.collection.query(
-            query_embeddings=[embedding_list],
-            n_results=1,
-            include=['metadatas', 'distances']
-        )
-        
-        if not results['ids'] or not results['ids'][0]:
-            return None
-        
-        # Get the best match
-        distance = results['distances'][0][0]
-        metadata = results['metadatas'][0][0]
-        
-        # ChromaDB returns distance (1 - cosine_similarity), so we convert to similarity
-        similarity = 1 - distance
-        
-        if similarity >= threshold:
-            speaker_id = metadata['speaker_id']
-            
-            # Get all embeddings for this speaker to count them
-            all_embeddings = self.collection.get(
-                where={"speaker_id": speaker_id}
-            )
-            
-            return Speaker(
-                id=speaker_id,
-                display_name=metadata['display_name'],
-                created_at=metadata['created_at'],
-                embedding_count=len(all_embeddings['ids'])
-            )
-        
+
+        speaker, similarity = self.query_best_match(embedding)
+        if speaker and similarity >= threshold:
+            return speaker
         return None
     
     def get_speaker_by_id(self, speaker_id: str) -> Optional[Speaker]:

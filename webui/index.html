@@ -386,17 +386,75 @@
           </div>
           <div class="p-4 rounded-xl bg-slate-900/50 border border-slate-800 text-slate-200 text-sm whitespace-pre-wrap max-h-96 overflow-y-auto" x-text="formattedTranscript()"></div>
           <div x-show="(transcription.speakers || []).length">
-            <h3 class="text-sm font-medium text-slate-400 mb-2">Speakers (save embedding)</h3>
-            <div class="space-y-2">
-              <template x-for="s in (transcription.speakers || [])" :key="s.id">
-                <div class="flex flex-wrap items-center gap-2 p-3 rounded-lg border border-slate-800 bg-slate-900/30">
-                  <span class="text-white font-mono text-sm" x-text="s.id"></span>
-                  <span x-show="s.display_name" class="text-indigo-300 text-sm" x-text="s.display_name"></span>
-                  <span x-show="s.matched" class="text-xs text-green-500">matched</span>
-                  <button type="button" @click="openSaveSpeaker(s)" class="ml-auto text-sm px-3 py-1 rounded bg-indigo-600 hover:bg-indigo-500" x-show="s.embedding && s.embedding.length">Save as…</button>
-                </div>
-              </template>
+            <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+              <h3 class="text-sm font-medium text-slate-400">Speakers (save embedding)</h3>
+              <div class="flex flex-wrap items-center gap-2">
+                <button type="button" @click="runGlobalRematch()" :disabled="rematchBusy"
+                  class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-white border border-slate-600 disabled:opacity-50"
+                  x-text="rematchBusy ? 'Re-matching…' : 'Re-match transcripts'"></button>
+                <span x-show="rematchMessage" class="text-xs text-slate-500" x-text="rematchMessage"></span>
+              </div>
             </div>
+            <ul class="space-y-2">
+              <template x-for="s in transcriptionSpeakersSorted()" :key="s.id">
+                <li class="rounded-lg border border-slate-800 bg-slate-900/30 overflow-hidden">
+                  <div class="flex items-stretch min-h-[3rem]">
+                    <button type="button" @click="toggleTranscriptSpeakerRow(s.id)"
+                      class="flex-1 min-w-0 flex flex-wrap items-center gap-x-2 gap-y-1 px-3 py-3 text-left hover:bg-slate-800/40 active:bg-slate-800/60 transition-colors cursor-pointer"
+                      :aria-expanded="transcriptSpeakerExpanded(s.id)">
+                      <span class="text-slate-400 font-mono text-xs w-6 shrink-0 select-none" x-text="transcriptSpeakerExpanded(s.id) ? '▼' : '▶'"></span>
+                      <span class="text-white font-mono text-sm" x-text="s.id"></span>
+                      <span x-show="s.display_name" class="text-indigo-300 text-sm" x-text="s.display_name"></span>
+                      <span class="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700"
+                        x-text="transcriptSpeakerSegmentCount(s.id) + (transcriptSpeakerSegmentCount(s.id) === 1 ? ' segment' : ' segments')"></span>
+                      <span x-show="s.matched" class="text-xs text-green-500">matched</span>
+                      <span x-show="s.matched && s.match_similarity != null" class="text-xs text-green-400/80" x-text="formatMatchSimilarity(s.match_similarity)"></span>
+                    </button>
+                    <div class="relative shrink-0 flex items-stretch border-l border-slate-800 self-stretch" x-show="s.embedding && s.embedding.length">
+                      <button type="button" @click.stop="toggleSpeakerNeighbors('transcript', s)"
+                        class="px-3 py-3 text-slate-400 hover:text-white hover:bg-slate-800/40 text-sm font-mono"
+                        title="Nearest stored embeddings"
+                        :aria-expanded="isSpeakerNeighborsOpen('transcript', s.id)">≈</button>
+                      <div x-show="isSpeakerNeighborsOpen('transcript', s.id)" x-cloak
+                        class="absolute right-0 top-full z-20 mt-1 w-72 rounded-lg border border-slate-700 bg-slate-950 shadow-xl p-2 text-xs space-y-1"
+                        @click.stop>
+                        <p class="text-slate-500" x-show="speakerNeighborsLoadingKey === speakerNeighborsKey('transcript', s.id)">Loading…</p>
+                        <div x-show="speakerNeighborsLoadingKey !== speakerNeighborsKey('transcript', s.id)">
+                          <p class="text-slate-400 mb-1">Threshold: <span x-text="formatSimilarityThreshold(neighborsThresholdForSpeaker('transcript', s.id))"></span></p>
+                          <p x-show="neighborsCacheForSpeaker('transcript', s.id) && neighborsCacheForSpeaker('transcript', s.id).error" class="text-red-400" x-text="neighborsCacheForSpeaker('transcript', s.id).error"></p>
+                          <p x-show="!(neighborsCacheForSpeaker('transcript', s.id) && neighborsCacheForSpeaker('transcript', s.id).error) && neighborsForSpeaker('transcript', s.id).length === 0" class="text-slate-500">No stored embeddings yet.</p>
+                          <template x-for="(n, ni) in neighborsForSpeaker('transcript', s.id)" :key="'tr-n-' + s.id + '-' + ni">
+                            <div class="flex flex-wrap items-baseline gap-x-2 py-0.5" :class="n.meets_threshold ? 'text-green-400' : 'text-slate-400'">
+                              <span x-text="n.display_name + ' · emb ' + n.embedding_index"></span>
+                              <span x-text="formatMatchSimilarity(n.similarity)"></span>
+                              <span class="text-[10px] uppercase tracking-wide" x-text="n.meets_threshold ? 'matched' : 'below'"></span>
+                            </div>
+                          </template>
+                        </div>
+                      </div>
+                    </div>
+                    <button type="button" @click.stop="openSaveSpeaker(s)"
+                      class="shrink-0 px-4 py-3 text-sm bg-indigo-600 hover:bg-indigo-500 text-white border-l border-slate-800 self-stretch flex items-center disabled:opacity-50"
+                      x-show="s.embedding && s.embedding.length">Save as…</button>
+                  </div>
+                  <div x-show="transcriptSpeakerExpanded(s.id)" x-cloak class="border-t border-slate-800 px-3 pb-3 pt-2 space-y-2 bg-slate-950/40">
+                    <p x-show="transcriptSpeakerSegmentCount(s.id) === 0" class="text-slate-500 text-xs">No segments for this speaker.</p>
+                    <template x-for="item in segmentsForTranscriptSpeaker(s.id)" :key="item.idx">
+                      <div class="rounded-md border border-slate-800/80 bg-slate-900/20 p-2 flex items-start gap-2 text-sm">
+                        <div class="min-w-0 flex-1">
+                          <span class="text-slate-500 text-xs" x-text="(item.seg.start != null ? item.seg.start.toFixed(1) : '?') + '–' + (item.seg.end != null ? item.seg.end.toFixed(1) : '?') + 's'"></span>
+                          <p class="text-slate-300 text-xs mt-1 line-clamp-2" x-text="_stripDiarizationPrefix(item.seg.text, item.seg.speaker)"></p>
+                        </div>
+                        <button type="button" x-show="transcriptSegmentCanPlay(item.seg)" @click="toggleTranscriptSegmentPlay(item.idx)"
+                          class="shrink-0 w-8 h-8 rounded-md bg-slate-800 hover:bg-slate-700 text-sm text-white border border-slate-600 flex items-center justify-center leading-none"
+                          :aria-label="transcriptSegmentPlayButtonState(item.idx) === 'pause' ? 'Pause segment audio' : 'Play segment audio'"
+                          x-text="transcriptSegmentPlayButtonState(item.idx) === 'pause' ? '⏸' : '▶'"></button>
+                      </div>
+                    </template>
+                  </div>
+                </li>
+              </template>
+            </ul>
           </div>
           <div x-show="saveSpeakerEmbedding" class="p-4 rounded-xl border border-indigo-900/50 bg-indigo-950/20 space-y-2">
             <p class="text-sm text-slate-300">Save this embedding to the speaker database for future matching.</p>
@@ -438,7 +496,15 @@
 
     <!-- Speakers -->
     <section x-show="route.name === 'speakers'" x-cloak class="space-y-6">
-      <h2 class="text-lg font-medium text-white">Speakers</h2>
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <h2 class="text-lg font-medium text-white">Speakers</h2>
+        <div class="flex flex-wrap items-center gap-2">
+          <button type="button" @click="runGlobalRematch()" :disabled="rematchBusy"
+            class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-white border border-slate-600 disabled:opacity-50"
+            x-text="rematchBusy ? 'Re-matching…' : 'Re-match transcripts'"></button>
+          <span x-show="rematchMessage" class="text-xs text-slate-500" x-text="rematchMessage"></span>
+        </div>
+      </div>
       <p x-show="spError" class="text-red-400 text-sm" x-text="spError"></p>
       <p x-show="spLoading" class="text-slate-500">Loading…</p>
 
@@ -520,6 +586,30 @@
                         <span class="text-white font-mono text-sm" x-text="s.id"></span>
                         <span x-show="s.display_name" class="text-indigo-300 text-sm" x-text="s.display_name"></span>
                         <span x-show="s.matched" class="text-xs text-green-500">matched</span>
+                        <span x-show="s.matched && s.match_similarity != null" class="text-xs text-green-400/80" x-text="formatMatchSimilarity(s.match_similarity)"></span>
+                        <div class="relative shrink-0" x-show="s.embedding && s.embedding.length">
+                          <button type="button" @click.stop="toggleSpeakerNeighbors('extract', s)"
+                            class="w-8 h-8 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white text-sm font-mono border border-slate-600"
+                            title="Nearest stored embeddings"
+                            :aria-expanded="isSpeakerNeighborsOpen('extract', s.id)">≈</button>
+                          <div x-show="isSpeakerNeighborsOpen('extract', s.id)" x-cloak
+                            class="absolute left-0 top-full z-20 mt-1 w-72 rounded-lg border border-slate-700 bg-slate-950 shadow-xl p-2 text-xs space-y-1"
+                            @click.stop>
+                            <p class="text-slate-500" x-show="speakerNeighborsLoadingKey === speakerNeighborsKey('extract', s.id)">Loading…</p>
+                            <div x-show="speakerNeighborsLoadingKey !== speakerNeighborsKey('extract', s.id)">
+                              <p class="text-slate-400 mb-1">Threshold: <span x-text="formatSimilarityThreshold(neighborsThresholdForSpeaker('extract', s.id))"></span></p>
+                              <p x-show="neighborsCacheForSpeaker('extract', s.id) && neighborsCacheForSpeaker('extract', s.id).error" class="text-red-400" x-text="neighborsCacheForSpeaker('extract', s.id).error"></p>
+                              <p x-show="!(neighborsCacheForSpeaker('extract', s.id) && neighborsCacheForSpeaker('extract', s.id).error) && neighborsForSpeaker('extract', s.id).length === 0" class="text-slate-500">No stored embeddings yet.</p>
+                              <template x-for="(n, ni) in neighborsForSpeaker('extract', s.id)" :key="'ex-n-' + s.id + '-' + ni">
+                                <div class="flex flex-wrap items-baseline gap-x-2 py-0.5" :class="n.meets_threshold ? 'text-green-400' : 'text-slate-400'">
+                                  <span x-text="n.display_name + ' · emb ' + n.embedding_index"></span>
+                                  <span x-text="formatMatchSimilarity(n.similarity)"></span>
+                                  <span class="text-[10px] uppercase tracking-wide" x-text="n.meets_threshold ? 'matched' : 'below'"></span>
+                                </div>
+                              </template>
+                            </div>
+                          </div>
+                        </div>
                         <button type="button" @click="openSaveSpeaker(s)" class="ml-auto text-sm px-3 py-1 rounded bg-indigo-600 hover:bg-indigo-500" x-show="s.embedding && s.embedding.length">Save as…</button>
                       </div>
                     </template>
