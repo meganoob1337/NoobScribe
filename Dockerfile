@@ -28,12 +28,6 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     --index-url https://download.pytorch.org/whl/cu130 \
     --extra-index-url https://pypi.org/simple
 
-RUN --mount=type=cache,target=/root/.cache/pip \
-    . venv/bin/activate && pip install --upgrade --force-reinstall \
-    torch torchaudio torchvision \
-    --index-url https://download.pytorch.org/whl/cu130 \
-    --extra-index-url https://pypi.org/simple
-
 RUN . venv/bin/activate && python -c "\
 import torch; \
 assert '+cu130' in torch.__version__, torch.__version__; \
