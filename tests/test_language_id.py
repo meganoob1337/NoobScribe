@@ -1,10 +1,19 @@
-"""Language ID segment planning for short and long audio."""
+"""Language ID segment planning and model unload."""
+from __future__ import annotations
+
+import os
+import sys
 import unittest
+from unittest.mock import MagicMock, patch
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from services.language_id import (
     _plan_language_id_segments,
     _segment_start_seconds,
+    detect_spoken_language,
 )
+import services.language_id as language_id_module
 
 
 class TestLanguageIdSegmentPlanning(unittest.TestCase):
@@ -48,6 +57,29 @@ class TestLanguageIdSegmentPlanning(unittest.TestCase):
     def test_very_short_clip_still_classifies_once(self):
         planned = _plan_language_id_segments(int(0.8 * 16000), 30)
         self.assertEqual(planned, [(0.0, 0, int(0.8 * 16000))])
+
+
+class TestLanguageIdUnload(unittest.TestCase):
+    def setUp(self):
+        language_id_module._classifier = None
+
+    def tearDown(self):
+        language_id_module._classifier = None
+
+    @patch("services.language_id.unload_language_id_classifier")
+    @patch("services.language_id._get_classifier")
+    def test_detect_spoken_language_unloads_classifier(self, mock_get_classifier, mock_unload):
+        classifier = MagicMock()
+        classifier.load_audio.return_value = MagicMock(dim=MagicMock(return_value=1), shape=[16000])
+        mock_get_classifier.return_value = classifier
+
+        with patch("services.language_id._signal_num_samples", return_value=16000), patch(
+            "services.language_id._classify_signal_segment", return_value="en"
+        ):
+            result = detect_spoken_language("audio.wav", MagicMock(language_id_max_audio_seconds=30))
+
+        self.assertEqual(result, "en")
+        mock_unload.assert_called_once()
 
 
 if __name__ == "__main__":

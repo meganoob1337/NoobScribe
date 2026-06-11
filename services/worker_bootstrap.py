@@ -12,12 +12,13 @@ logger = logging.getLogger(__name__)
 
 _asr_model: Any = None
 _speaker_db: Optional[SpeakerDB] = None
+_resources_initialized = False
 
 
 def init_worker_resources() -> Tuple[Any, Optional[SpeakerDB]]:
     """Load models once per worker process."""
-    global _asr_model, _speaker_db
-    if _asr_model is not None or _speaker_db is not None:
+    global _asr_model, _speaker_db, _resources_initialized
+    if _resources_initialized:
         return _asr_model, _speaker_db
 
     cfg = get_config()
@@ -31,6 +32,9 @@ def init_worker_resources() -> Tuple[Any, Optional[SpeakerDB]]:
 
         if getattr(cfg, "use_api", False):
             _asr_model = None
+            logger.info(
+                "Worker ASR model skipped (USE_API=1); local NeMo/Canary will not be loaded"
+            )
             logger.info(
                 "Worker using remote STT API at %s (model=%s)",
                 cfg.stt_base_url,
@@ -53,11 +57,12 @@ def init_worker_resources() -> Tuple[Any, Optional[SpeakerDB]]:
         logger.warning("Worker speaker database init failed: %s", e)
         _speaker_db = None
 
+    _resources_initialized = True
     return _asr_model, _speaker_db
 
 
 def get_worker_asr_model() -> Any:
-    if _asr_model is None and not getattr(get_config(), "use_api", False):
+    if not _resources_initialized:
         init_worker_resources()
     return _asr_model
 

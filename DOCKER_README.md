@@ -2,6 +2,8 @@
 
 GPU-backed Docker setup for **NoobScribe** (NeMo ASR + optional pyannote diarization).
 
+Transcription is **asynchronous**: each Compose profile runs **Redis**, an **API** container (HTTP only), and a **worker** container that consumes the job queue. See **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** for the full design.
+
 ## Prerequisites
 
 1. [Docker](https://docs.docker.com/get-docker/)
@@ -10,7 +12,7 @@ GPU-backed Docker setup for **NoobScribe** (NeMo ASR + optional pyannote diariza
 
 ## Pre-built image (GitHub Container Registry)
 
-The workflow **[.github/workflows/docker-publish.yml](.github/workflows/docker-publish.yml)** builds and pushes the API image to **GHCR** on pushes to the default branch (`main`), on version tags `v*`, and on manual **workflow_dispatch**. It does **not** run on pull requests.
+The workflow **[.github/workflows/docker-publish.yml](.github/workflows/docker-publish.yml)** builds and pushes the application image to **GHCR** (used for both API and worker containers) on pushes to the default branch (`main`), on version tags `v*`, and on manual **workflow_dispatch**. It does **not** run on pull requests.
 
 - **Package:** `ghcr.io/meganoob1337/noobscribe` (GitHub lowercases the repository name; the GitHub repo is **NoobScribe**).
 - **Tags (GPU image, [Dockerfile](Dockerfile), `linux/amd64` only):** **`latest`** on `main`; git tags like **`v1.2.3`** produce a full semver tag (e.g. **`1.2.3`**). No per-commit SHA tags.
@@ -68,14 +70,45 @@ Each profile starts **`redis`**, the **API** container (`SKIP_MODEL_LOAD=1`, no 
 
 The default [docker-compose.yml](docker-compose.yml) mode uses the `traefik` profile from `.env` (`COMPOSE_PROFILES=traefik`), running **GPU + Traefik** with no host port publish. Use `--profile no-traefik` (GPU) or `--profile cpu-no-traefik` (CPU) for direct host publish via `NOOBSCRIBE_PUBLISH_PORT`.
 
+### Worker architecture (Compose)
+
+| Service | Purpose | GPU | Exposes HTTP |
+|---------|---------|-----|--------------|
+| `redis` | RQ job queue (`transcription` queue) | No | No |
+| `noobscribe-api` / `noobscribe-api-cpu` / `…-no-traefik` | FastAPI + Web UI; enqueues jobs | Optional (API does not run inference) | Yes (Traefik or host port) |
+| `noobscribe-worker` / `noobscribe-worker-cpu` / `…-no-traefik` | Runs `python -m workers.run`; ASR + diarization | Yes (GPU profiles) or `FORCE_CPU=1` (CPU profiles) | No |
+
+Both app containers share the **same image** and mount **`./data`** and **`./huggingface`**. Only the API publishes port 8000 (directly or via Traefik). Workers have no HTTP port; check logs with `docker compose logs -f noobscribe-worker` (or the CPU/no-traefik service name for your profile).
+
+**Scaling workers:** start an extra worker service with the same image, env, volumes, and `command: ["/app/venv/bin/python", "-m", "workers.run"]`, or duplicate the worker service in a override file. All workers must share the same `REDIS_URL` and `./data` mount.
+
+**Health:** `GET /health` on the API reports `queue_enabled`, `redis_ok`, `workers_registered`, and `queue_depth`. If `workers_registered` is 0, jobs remain `queued` until a worker starts.
+
 ## Manual image build
 
+Prefer **Compose** so Redis and a worker start with the API. A single `docker run` of only the API is not enough for transcription.
+
+GPU example (three containers, simplified — use [docker-compose.yml](docker-compose.yml) for production):
+
 ```bash
-docker build -t noobscribe-api .
-docker run --gpus all -p 8000:8000 \
+docker build -t noobscribe:latest .
+
+docker network create noobscribe-net
+docker run -d --name noobscribe-redis --network noobscribe-net \
+  -v ./data/redis:/data redis:7-alpine redis-server --appendonly yes
+
+docker run -d --name noobscribe-worker --network noobscribe-net --gpus all \
+  -e REDIS_URL=redis://noobscribe-redis:6379/0 \
   -e HUGGINGFACE_ACCESS_TOKEN=your_token \
-  -v ./data:/app/data \
-  noobscribe-api
+  -v ./data:/app/data -v ./huggingface:/root/.cache/huggingface \
+  noobscribe:latest /app/venv/bin/python -m workers.run
+
+docker run -d --name noobscribe-api --network noobscribe-net -p 8000:8000 \
+  -e SKIP_MODEL_LOAD=1 \
+  -e REDIS_URL=redis://noobscribe-redis:6379/0 \
+  -e HUGGINGFACE_ACCESS_TOKEN=your_token \
+  -v ./data:/app/data -v ./huggingface:/root/.cache/huggingface \
+  noobscribe:latest
 ```
 
 Pinned dependencies for the **CPU** image are in **`requirements.lock.txt`** ([`Dockerfile.cpu`](Dockerfile.cpu)). The **GPU** image installs from [`requirements.txt`](requirements.txt) and then force-reinstalls the PyTorch cu130 stack ([`Dockerfile`](Dockerfile)).
@@ -97,16 +130,24 @@ Pinned dependencies for the **CPU** image are in **`requirements.lock.txt`** ([`
 | `CHUNK_DURATION` | Chunk length in seconds |
 | `HUGGINGFACE_ACCESS_TOKEN` | HF token (diarization / downloads) |
 | `RECORDINGS_PATH`, `DATABASE_URL`, `CHROMADB_PATH` | Defaults match `./data` → `/app/data` in Compose |
+| `REDIS_URL` | Redis connection for the transcription queue (Compose: `redis://redis:6379/0`) |
+| `QUEUE_TRANSCRIPTION` | `1` (default) enables async jobs; `0` makes enqueue endpoints return `503` |
+| `SKIP_MODEL_LOAD` | `1` on API containers — workers load NeMo / diarization models |
+
+Set queue-related variables on **both** API and worker services when overriding Compose env.
 
 ## Volumes
 
 Compose mounts **`./data:/app/data`**, which stores:
 
-- SQLite (`noobscribe.db` by default)
+- SQLite (`noobscribe.db` by default) — recordings, jobs, transcription results
 - `./data/recordings/` — library audio
 - `./data/speakers/` — Chroma speaker index
+- `./data/redis/` — Redis AOF persistence (Compose `redis` service)
 
 Ephemeral transcoding uses `TEMP_DIR` (default `/tmp/noobscribe` inside the app config unless overridden).
+
+API and worker containers must use the **same** `./data` mount so workers can read recordings and write job results.
 
 ## API and UI
 
@@ -117,6 +158,7 @@ Ephemeral transcoding uses `TEMP_DIR` (default `/tmp/noobscribe` inside the app 
 curl -X POST http://localhost:8000/v1/audio/transcriptions \
   -F file=@/path/to/audio.wav \
   -F diarize=true
+# => 202 { "job_id", "status": "queued" } — poll GET /v1/transcription-jobs/{job_id}
 ```
 
 ## Traefik (reverse proxy + TLS)

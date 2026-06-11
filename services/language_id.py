@@ -5,6 +5,7 @@ Model: https://huggingface.co/speechbrain/lang-id-voxlingua107-ecapa
 """
 from __future__ import annotations
 
+import gc
 import logging
 import os
 import threading
@@ -69,6 +70,22 @@ def _get_classifier(config: Any) -> Any:
             run_opts={"device": device},
         )
         return _classifier
+
+
+def unload_language_id_classifier() -> None:
+    """Release the language identification model and free GPU memory."""
+    global _classifier
+    with _classifier_lock:
+        if _classifier is None:
+            return
+        del _classifier
+        _classifier = None
+    gc.collect()
+    if use_cuda():
+        import torch
+
+        torch.cuda.empty_cache()
+    logger.info("Language identification model unloaded")
 
 
 _SAMPLE_RATE = 16000
@@ -243,6 +260,8 @@ def detect_spoken_language(wav_path: str, config: Any) -> Optional[str]:
     except Exception as e:
         logger.warning("Language identification failed: %s", e)
         return None
+    finally:
+        unload_language_id_classifier()
 
 
 def resolve_transcription_language(language: Optional[str], wav_path: str, config: Any) -> Optional[str]:

@@ -39,6 +39,29 @@ NoobScribe is built around a Whisper-compatible transcription API with persisten
 - Match detected speakers against a stored speaker memory (Chroma) to reuse display names across recordings.
 - Store recordings and transcription metadata in SQLite, with audio files persisted on disk.
 - Support language auto-detection (when `language` is omitted) and offline model paths for ASR/diarization.
+- Queue transcription as **async jobs** (Redis + RQ): the API returns `202` with a job id; workers run ASR/diarization and persist results while the HTTP server stays responsive.
+
+## Architecture
+
+NoobScribe uses a **split API / worker** layout:
+
+```mermaid
+flowchart LR
+    Client[Client / Web UI] --> API[FastAPI API]
+    API --> Redis[(Redis queue)]
+    API --> DB[(SQLite + audio files)]
+    Redis --> Worker[RQ worker]
+    Worker --> DB
+    Worker --> ASR[NeMo / remote STT]
+    Worker --> Diar[Pyannote diarization]
+    Worker --> Chroma[Chroma speaker memory]
+```
+
+- **API** — HTTP, recordings library, speaker CRUD, job enqueue/cancel/poll. In Docker it sets **`SKIP_MODEL_LOAD=1`** and does not load NeMo in-process.
+- **Redis + RQ** — `transcription` queue; all transcribe endpoints return **`202 Accepted`** immediately.
+- **Worker** — `python -m workers.run` loads ASR/diarization models once, processes jobs, writes progress and results to SQLite.
+
+Compose starts **`redis`**, **`noobscribe-api`**, and **`noobscribe-worker`** (or CPU/no-Traefik variants). See **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** for sequence diagrams, job lifecycle, health checks, and scaling notes.
 
 ## Implemented Web UI features
 

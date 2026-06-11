@@ -4,7 +4,9 @@
 #
 # Speaker diarization module for NoobScribe (pyannote.audio integration)
 
-from typing import Dict, List, Optional, Any
+from contextlib import contextmanager
+from typing import Dict, Iterator, List, Optional, Any
+import gc
 import os
 import logging
 import numpy as np
@@ -90,6 +92,22 @@ class Diarizer:
         except Exception as e:
             logger.error("Failed to initialize diarization pipeline: %s", e)
 
+    def unload(self) -> None:
+        """Release the diarization pipeline and free GPU memory."""
+        if self.pipeline is None:
+            return
+        try:
+            if self.device == "cuda":
+                self.pipeline.to(torch.device("cpu"))
+        except Exception as e:
+            logger.debug("Could not move diarization pipeline to CPU: %s", e)
+        del self.pipeline
+        self.pipeline = None
+        gc.collect()
+        if use_cuda():
+            torch.cuda.empty_cache()
+        logger.info("Diarization pipeline unloaded")
+
     def diarize(self, audio_path: str, num_speakers: Optional[int] = None, return_embeddings: Optional[bool] = False) -> DiarizationResult:
         """
         Perform speaker diarization on an audio file
@@ -171,48 +189,69 @@ class Diarizer:
 
         return speaker_db.match_speakers(embeddings, threshold)
 
-    def merge_with_transcription(self,
-                                diarization: DiarizationResult,
-                                transcription_segments: list,
-                                speaker_mapping: Optional[Dict[str, str]] = None) -> list:
-        """
-        Merge diarization results with transcription segments
+    def merge_with_transcription(
+        self,
+        diarization: DiarizationResult,
+        transcription_segments: list,
+        speaker_mapping: Optional[Dict[str, str]] = None,
+    ) -> list:
+        """Merge diarization results with transcription segments."""
+        return merge_diarization_with_transcription(
+            diarization, transcription_segments, speaker_mapping=speaker_mapping
+        )
 
-        Args:
-            diarization: Speaker diarization result
-            transcription_segments: List of transcription segments with start/end times
-            speaker_mapping: Optional mapping from speaker labels to display names
 
-        Returns:
-            Merged list of segments with speaker information
-        """
-        if not diarization.segments:
-            return transcription_segments
+def merge_diarization_with_transcription(
+    diarization: DiarizationResult,
+    transcription_segments: list,
+    speaker_mapping: Optional[Dict[str, str]] = None,
+) -> list:
+    """
+    Merge diarization results with transcription segments.
 
-        for segment in transcription_segments:
-            start = segment.start
-            end = segment.end
-
-            overlapping = []
-            for spk_segment in diarization.segments:
-                overlap_start = max(start, spk_segment.start)
-                overlap_end = min(end, spk_segment.end)
-
-                if overlap_end > overlap_start:
-                    duration = overlap_end - overlap_start
-                    overlapping.append((spk_segment.speaker, duration))
-
-            if overlapping:
-                overlapping.sort(key=lambda x: x[1], reverse=True)
-                original_speaker = overlapping[0][0]
-
-                if original_speaker.startswith("speaker_"):
-                    speaker_id = original_speaker.replace("speaker_", "")
-                else:
-                    speaker_id = original_speaker
-
-                setattr(segment, "speaker", speaker_id)
-            else:
-                setattr(segment, "speaker", "unknown")
-
+    Does not require a loaded Diarizer pipeline.
+    """
+    if not diarization.segments:
         return transcription_segments
+
+    for segment in transcription_segments:
+        start = segment.start
+        end = segment.end
+
+        overlapping = []
+        for spk_segment in diarization.segments:
+            overlap_start = max(start, spk_segment.start)
+            overlap_end = min(end, spk_segment.end)
+
+            if overlap_end > overlap_start:
+                duration = overlap_end - overlap_start
+                overlapping.append((spk_segment.speaker, duration))
+
+        if overlapping:
+            overlapping.sort(key=lambda x: x[1], reverse=True)
+            original_speaker = overlapping[0][0]
+
+            if original_speaker.startswith("speaker_"):
+                speaker_id = original_speaker.replace("speaker_", "")
+            else:
+                speaker_id = original_speaker
+
+            setattr(segment, "speaker", speaker_id)
+        else:
+            setattr(segment, "speaker", "unknown")
+
+    return transcription_segments
+
+
+@contextmanager
+def diarizer_session(
+    *,
+    access_token: Optional[str] = None,
+    model_path: Optional[str] = None,
+) -> Iterator[Diarizer]:
+    """Load a diarizer for the block and unload it when done."""
+    diarizer = Diarizer(access_token=access_token, model_path=model_path)
+    try:
+        yield diarizer
+    finally:
+        diarizer.unload()

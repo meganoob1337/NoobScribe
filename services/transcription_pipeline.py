@@ -13,7 +13,7 @@ from models import SpeakerInfo, TranscriptionResponse, WhisperSegment
 from audio import split_audio_into_chunks
 from transcription import transcribe_audio_chunk
 from services.stt_api_client import transcribe_api_chunk
-from diarization import Diarizer
+from diarization import diarizer_session, merge_diarization_with_transcription
 from services.language_id import resolve_transcription_language
 
 logger = logging.getLogger(__name__)
@@ -58,43 +58,35 @@ def run_transcription_pipeline(
     if on_progress:
         on_progress("preparing", 0, total_chunks)
 
-    diarizer = None
+    diarization_result = None
+    speaker_mapping = None
     if diarize:
         local_path = getattr(config, "diarization_model_path", None)
         hf_token = config.get_hf_token()
-        if local_path:
-            diarizer = Diarizer(model_path=local_path)
-        elif hf_token:
-            diarizer = Diarizer(access_token=hf_token)
-        else:
+        if not local_path and not hf_token:
             logger.warning("Diarization requested but no local diarization path or HuggingFace token")
-
-    diarization_result = None
-    if diarizer and getattr(diarizer, "pipeline", None) is not None:
-        if on_progress:
-            on_progress("diarization", 0, 1)
-        logger.info("Performing speaker diarization")
-        diarization_result = diarizer.diarize(wav_file, return_embeddings=True)
-        logger.info("Diarization found %s speakers", diarization_result.num_speakers)
-        if on_progress:
-            on_progress("diarization", 1, 1)
-    elif diarize:
-        logger.warning("Diarization requested but pipeline is not available")
-
-    speaker_mapping = None
-    if (
-        diarizer
-        and getattr(diarizer, "pipeline", None) is not None
-        and diarization_result
-        and diarization_result.embeddings
-        and speaker_db
-    ):
-        logger.info("Matching speakers against stored embeddings")
-        speaker_mapping = diarizer.match_speakers(
-            diarization_result.embeddings,
-            speaker_db,
-            threshold=config.speaker_similarity_threshold,
-        )
+        else:
+            with diarizer_session(
+                access_token=hf_token if not local_path else None,
+                model_path=local_path,
+            ) as diarizer:
+                if getattr(diarizer, "pipeline", None) is not None:
+                    if on_progress:
+                        on_progress("diarization", 0, 1)
+                    logger.info("Performing speaker diarization")
+                    diarization_result = diarizer.diarize(wav_file, return_embeddings=True)
+                    logger.info("Diarization found %s speakers", diarization_result.num_speakers)
+                    if on_progress:
+                        on_progress("diarization", 1, 1)
+                    if diarization_result.embeddings and speaker_db:
+                        logger.info("Matching speakers against stored embeddings")
+                        speaker_mapping = diarizer.match_speakers(
+                            diarization_result.embeddings,
+                            speaker_db,
+                            threshold=config.speaker_similarity_threshold,
+                        )
+                else:
+                    logger.warning("Diarization requested but pipeline is not available")
 
     all_text: List[str] = []
     all_segments: List[WhisperSegment] = []
@@ -127,10 +119,10 @@ def run_transcription_pipeline(
 
     full_text = " ".join(all_text)
 
-    if diarizer and diarization_result and diarization_result.segments:
+    if diarization_result and diarization_result.segments:
         logger.info("Found %s speakers", diarization_result.num_speakers)
 
-        all_segments = diarizer.merge_with_transcription(
+        all_segments = merge_diarization_with_transcription(
             diarization_result,
             all_segments,
             speaker_mapping=speaker_mapping,
