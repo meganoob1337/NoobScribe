@@ -48,7 +48,7 @@ class TestTranscriptionPipelineOrdering(unittest.TestCase):
         config.diarization_model_path = "/models/diarization"
         config.get_hf_token.return_value = None
         config.include_diarization_in_text = False
-        config.model_id = "whisper-1"
+        config.get_transcription_model_name.return_value = "whisper-1"
         config.speaker_similarity_threshold = 0.7
 
         with patch("services.transcription_pipeline.diarizer_session", tracking_session):

@@ -32,3 +32,5 @@ aiosqlite>=0.19
 speechbrain
 redis>=5.0
 rq>=2.0
+# Optional ONNX ASR backend (install matching extra: onnx-asr[cpu,hub] or onnx-asr[gpu,hub])
+onnx-asr

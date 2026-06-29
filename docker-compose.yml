@@ -21,7 +21,7 @@ x-noobscribe-common: &noobscribe-common
     - USE_API=${USE_API:-0}
     - STT_BASE_URL=${STT_BASE_URL:-}
     - STT_API_KEY=${STT_API_KEY:-}
-    - MODEL_ID=${MODEL_ID:-nvidia/canary-1b-v2}
+    - ASR_MODEL=${ASR_MODEL:-canary-1b-v2}
     - MODEL_PATH=${MODEL_PATH:-}
     - DIARIZATION_MODEL_PATH=${DIARIZATION_MODEL_PATH:-}
     - TEMPERATURE=${TEMPERATURE:-0.0}
@@ -118,7 +118,7 @@ services:
       - USE_API=${USE_API:-0}
       - STT_BASE_URL=${STT_BASE_URL:-}
       - STT_API_KEY=${STT_API_KEY:-}
-      - MODEL_ID=${MODEL_ID:-nvidia/canary-1b-v2}
+      - ASR_MODEL=${ASR_MODEL:-canary-1b-v2}
       - MODEL_PATH=${MODEL_PATH:-}
       - DIARIZATION_MODEL_PATH=${DIARIZATION_MODEL_PATH:-}
       - TEMPERATURE=${TEMPERATURE:-0.0}
@@ -151,7 +151,7 @@ services:
       - USE_API=${USE_API:-0}
       - STT_BASE_URL=${STT_BASE_URL:-}
       - STT_API_KEY=${STT_API_KEY:-}
-      - MODEL_ID=${MODEL_ID:-nvidia/canary-1b-v2}
+      - ASR_MODEL=${ASR_MODEL:-canary-1b-v2}
       - MODEL_PATH=${MODEL_PATH:-}
       - DIARIZATION_MODEL_PATH=${DIARIZATION_MODEL_PATH:-}
       - TEMPERATURE=${TEMPERATURE:-0.0}
@@ -176,7 +176,7 @@ services:
       - USE_API=${USE_API:-0}
       - STT_BASE_URL=${STT_BASE_URL:-}
       - STT_API_KEY=${STT_API_KEY:-}
-      - MODEL_ID=${MODEL_ID:-nvidia/canary-1b-v2}
+      - ASR_MODEL=${ASR_MODEL:-canary-1b-v2}
       - MODEL_PATH=${MODEL_PATH:-}
       - DIARIZATION_MODEL_PATH=${DIARIZATION_MODEL_PATH:-}
       - TEMPERATURE=${TEMPERATURE:-0.0}
@@ -228,7 +228,7 @@ services:
       - USE_API=${USE_API:-0}
       - STT_BASE_URL=${STT_BASE_URL:-}
       - STT_API_KEY=${STT_API_KEY:-}
-      - MODEL_ID=${MODEL_ID:-nvidia/canary-1b-v2}
+      - ASR_MODEL=${ASR_MODEL:-canary-1b-v2}
       - MODEL_PATH=${MODEL_PATH:-}
       - DIARIZATION_MODEL_PATH=${DIARIZATION_MODEL_PATH:-}
       - TEMPERATURE=${TEMPERATURE:-0.0}
@@ -268,7 +268,7 @@ services:
       - USE_API=${USE_API:-0}
       - STT_BASE_URL=${STT_BASE_URL:-}
       - STT_API_KEY=${STT_API_KEY:-}
-      - MODEL_ID=${MODEL_ID:-nvidia/canary-1b-v2}
+      - ASR_MODEL=${ASR_MODEL:-canary-1b-v2}
       - MODEL_PATH=${MODEL_PATH:-}
       - DIARIZATION_MODEL_PATH=${DIARIZATION_MODEL_PATH:-}
       - TEMPERATURE=${TEMPERATURE:-0.0}
@@ -301,7 +301,7 @@ services:
       - USE_API=${USE_API:-0}
       - STT_BASE_URL=${STT_BASE_URL:-}
       - STT_API_KEY=${STT_API_KEY:-}
-      - MODEL_ID=${MODEL_ID:-nvidia/canary-1b-v2}
+      - ASR_MODEL=${ASR_MODEL:-canary-1b-v2}
       - MODEL_PATH=${MODEL_PATH:-}
       - DIARIZATION_MODEL_PATH=${DIARIZATION_MODEL_PATH:-}
       - TEMPERATURE=${TEMPERATURE:-0.0}

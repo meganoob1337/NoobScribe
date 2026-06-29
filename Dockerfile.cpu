@@ -35,6 +35,9 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install -r requirements.cpu.filtered.txt
 
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install "onnx-asr[cpu,hub]"
+
 COPY . .
 
 EXPOSE 8000

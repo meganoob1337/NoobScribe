@@ -99,7 +99,7 @@ Idempotent recovery for jobs stuck in `queued` when Redis/RQ work was lost or fi
 
 ### 1. Transcribe Audio
 
-Queue transcription of an uploaded audio file with optional speaker diarization. **ASR backend:** by default a worker uses **local NVIDIA NeMo** (default: Canary 1B v2). When **`USE_API=1`**, each audio chunk is sent to a **remote OpenAI-compatible** `POST …/audio/transcriptions` endpoint (`STT_BASE_URL` + `STT_API_KEY`); **`MODEL_ID`** is passed as the remote `model` name. Diarization, language ID, and merging behavior are unchanged in both modes.
+Queue transcription of an uploaded audio file with optional speaker diarization. **ASR backend:** by default a worker uses a **configured local ASR model** (`ASR_MODEL` registry key, default NeMo Canary 1B v2). When **`USE_API=1`**, each audio chunk is sent to a **remote OpenAI-compatible** `POST …/audio/transcriptions` endpoint (`STT_BASE_URL` + `STT_API_KEY`); **`MODEL_ID`** is passed as the remote `model` name. Diarization, language ID, and merging behavior are unchanged in both modes.
 
 **Endpoint:** `POST /v1/audio/transcriptions`
 
@@ -112,7 +112,7 @@ Queue transcription of an uploaded audio file with optional speaker diarization.
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
 | `file` | File | Yes | - | The audio file to transcribe (supports common audio formats: wav, mp3, m4a, flac, etc.) |
-| `model` | string | No | `"whisper-1"` | Model identifier (accepted for compatibility). **Local mode:** server uses configured NeMo ASR (`MODEL_ID` / `MODEL_PATH`). **API mode (`USE_API`):** the form field is still accepted; the server uses **`MODEL_ID`** as the remote transcription `model` parameter. |
+| `model` | string | No | `"whisper-1"` | Model identifier (accepted for compatibility). **Local mode:** server uses configured **`ASR_MODEL`** registry entry (see `config/asr_models.yaml`). **API mode (`USE_API`):** the form field is still accepted; the server uses **`MODEL_ID`** as the remote transcription `model` parameter. |
 | `language` | string | No | `null` | Language code of the audio (e.g., "en", "de", "fr"). If omitted or blank, the service runs [SpeechBrain VoxLingua107 ECAPA](https://huggingface.co/speechbrain/lang-id-voxlingua107-ecapa) on up to three segments (start, middle, 75%) of up to `LANGUAGE_ID_MAX_AUDIO_SECONDS` each and uses the majority label (first segment on a three-way tie). Shorter clips use fewer samples (one full clip when the file is ≤ segment length or too short for distinct windows). That code is passed as both NeMo `source_lang` and `target_lang`. If identification is disabled or fails, both are left unset (previous behavior). Set `DISABLE_LANGUAGE_ID=1` to skip detection. |
 | `prompt` | string | No | `null` | Optional prompt to guide the transcription (accepted for compatibility but currently ignored) |
 | `response_format` | string | No | `"json"` | Format of the response. Options: `"json"`, `"text"`, `"srt"`, `"vtt"`, `"verbose_json"` |
@@ -179,7 +179,7 @@ Queue transcription of an uploaded audio file with optional speaker diarization.
   "language": "en",
   "task": "transcribe",
   "duration": 120.5,
-  "model": "nvidia/canary-1b-v2",
+  "model": "canary-1b-v2",
   "speakers": [
     {
       "id": "SPEAKER_00",
@@ -309,7 +309,9 @@ Check the health status of the API and the loaded model.
   "version": "1.0.0",
   "model_loaded": true,
   "speaker_db_initialized": true,
-  "model_id": "nvidia/canary-1b-v2",
+  "model_id": "canary-1b-v2",
+  "asr_model": "canary-1b-v2",
+  "asr_backend": "nemo",
   "force_cpu": false,
   "cuda_available": true,
   "gpu_info": "NVIDIA GeForce RTX 3090",
@@ -318,7 +320,11 @@ Check the health status of the API and the loaded model.
   "workers_registered": 1,
   "queue_depth": 0,
   "config": {
-    "model_id": "nvidia/canary-1b-v2",
+    "model_id": "canary-1b-v2",
+    "asr_model": "canary-1b-v2",
+    "asr_backend": "nemo",
+    "asr_model_display_name": "NVIDIA Canary 1B v2 (NeMo)",
+    "available_local_models": ["canary-1b-v2", "canary-1b-v2-onnx-int8", "canary-1b-v2-onnx"],
     "chunk_duration": 20.0,
     "temp_dir": "/tmp/noobscribe",
     "chromadb_path": "./data/speakers",
@@ -336,9 +342,11 @@ Check the health status of the API and the loaded model.
 **Response Fields:**
 - `status` (string): Always "ok" if the API is running
 - `version` (string): API version
-- `model_loaded` (boolean): Whether transcription is ready: **true** if the local NeMo ASR is loaded **or** if **`USE_API`** is enabled (remote STT; no local ASR weights). **false** only when local ASR failed to load and API mode is off.
+- `model_loaded` (boolean): Whether transcription is ready: **true** if the local ASR model is loaded **or** if **`USE_API`** is enabled (remote STT; no local ASR weights). **false** only when local ASR failed to load and API mode is off.
 - `speaker_db_initialized` (boolean): Whether the Chroma speaker embedding store is available. The health check attempts lazy initialization if startup failed; **false** means speaker CRUD, rematch, and nearest-embedding endpoints return **503** (see server logs and `CHROMADB_PATH`).
-- `model_id` (string): Configured **`MODEL_ID`** (NeMo id in local mode; remote `model` name in API mode)
+- `model_id` (string): Active transcription model name — **`ASR_MODEL`** registry key in local mode; **`MODEL_ID`** in remote API mode
+- `asr_model` (string, optional): Local registry key when not in API mode; `null` when `USE_API=1`
+- `asr_backend` (string, optional): `nemo` or `onnx` for the configured local model; `null` in API mode
 - `force_cpu` (boolean): Whether `FORCE_CPU` is set, forcing CPU inference even if a GPU is present
 - `cuda_available` (boolean): Whether the server will use CUDA/GPU for inference (false when `force_cpu` is true or no GPU is available)
 - `gpu_info` (string, optional): GPU name if CUDA is used for inference, `null` otherwise
@@ -362,7 +370,7 @@ curl http://localhost:8000/health
 
 ### 3. List Models
 
-List available models (compatibility endpoint with OpenAI API).
+List available models (compatibility endpoint with OpenAI API). In **local mode**, returns one entry per key in `config/asr_models.yaml`. In **`USE_API`** mode, returns the configured remote **`MODEL_ID`**.
 
 **Endpoint:** `GET /v1/models`
 
@@ -375,11 +383,11 @@ List available models (compatibility endpoint with OpenAI API).
   "object": "list",
   "data": [
     {
-      "id": "whisper-1",
+      "id": "canary-1b-v2",
       "object": "model",
       "created": 1677649963,
       "owned_by": "noobscribe",
-      "root": "whisper-1",
+      "root": "canary-1b-v2",
       "parent": null,
       "permission": [
         {
@@ -1096,14 +1104,17 @@ A minimal SPA is served at **`/ui`** (same host as the API). Open `/ui` in a bro
 
 ## Offline model loading
 
+Local ASR models are selected via **`ASR_MODEL`** (registry key in [`config/asr_models.yaml`](config/asr_models.yaml)). Unknown keys fail at startup.
+
 Without HuggingFace downloads you can load:
 
 | Variable | Description |
 |----------|-------------|
-| `MODEL_PATH` | Path to a local NeMo **`.nemo`** checkpoint. When set, ASR is loaded with `ASRModel.restore_from` instead of `from_pretrained(MODEL_ID)`. |
+| `MODEL_PATH` | Optional offline path when the selected registry entry has `allow_path_override: true` — NeMo **`.nemo`** checkpoint or ONNX model directory (`.onnx` files). |
 | `DIARIZATION_MODEL_PATH` | Path to a local **pyannote** pipeline directory (with `config.yaml` and weights). When set, diarization does not require `HUGGINGFACE_ACCESS_TOKEN`. |
+| `ASR_MODELS_CONFIG` | Optional path to a custom ASR model registry YAML file (default: `config/asr_models.yaml`). |
 
-Leave both unset to use HuggingFace / cache as before.
+Leave `MODEL_PATH` unset to download from Hugging Face / onnx-asr hub as configured in the registry entry.
 
 Other useful paths:
 
@@ -1116,10 +1127,12 @@ Other useful paths:
 | `LANGUAGE_ID_SAVEDIR` | `{TEMP_DIR}/speechbrain_lang_id` | Download/cache directory for the language-ID model |
 | `LANGUAGE_ID_MAX_AUDIO_SECONDS` | `30` | Seconds per identification segment (start, middle, 75%); majority vote picks the final language |
 | `DISABLE_LANGUAGE_ID` | unset | If `1` / `true` / `yes`, skip language ID; NeMo `source_lang` / `target_lang` stay unset when no `language` is sent |
-| `USE_API` | unset | If `1` / `true` / `yes`, use remote OpenAI-compatible STT instead of loading NeMo locally. Requires **`STT_BASE_URL`** and **`STT_API_KEY`**. |
+| `USE_API` | unset | If `1` / `true` / `yes`, use remote OpenAI-compatible STT instead of loading a local ASR model. Requires **`STT_BASE_URL`** and **`STT_API_KEY`**. |
 | `STT_BASE_URL` | _(unset)_ | OpenAI-compatible API base URL (e.g. `https://api.openai.com/v1`). Required when `USE_API` is set. |
 | `STT_API_KEY` | _(unset)_ | Bearer token for the STT API. Required when `USE_API` is set. |
-| `MODEL_ID` | `nvidia/canary-1b-v2` | In **API mode**, reused as the remote **`model`** name (e.g. `whisper-1`). |
+| `ASR_MODEL` | `canary-1b-v2` | **Local mode:** registry key from `config/asr_models.yaml`. Unknown keys fail at startup. |
+| `MODEL_ID` | `whisper-1` | **Remote API mode only:** freeform remote `model` name (e.g. `whisper-1`). Ignored in local mode. |
+| `ASR_MODELS_CONFIG` | _(unset)_ | Optional path to custom ASR model registry YAML. |
 | `REDIS_URL` | `redis://redis:6379/0` | Redis URL for the transcription job queue |
 | `QUEUE_TRANSCRIPTION` | `1` | Enable async job queue (`0` disables enqueue) |
 | `SKIP_MODEL_LOAD` | unset | When `1`, API process does not load NeMo (Docker API sets this; workers load models) |

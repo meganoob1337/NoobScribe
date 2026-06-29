@@ -4,8 +4,11 @@
 # Configuration settings for NoobScribe
 import os
 import logging
-from typing import Dict, Optional, Any
+from typing import Dict, Optional, Any, TYPE_CHECKING
 from pathlib import Path
+
+if TYPE_CHECKING:
+    from services.asr_models import ResolvedAsrModel
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -24,7 +27,8 @@ DEFAULT_PORT = 8000
 DEBUG_MODE = os.environ.get("DEBUG", "0") == "1"
 
 # Model settings
-DEFAULT_MODEL_ID = "nvidia/canary-1b-v2"
+DEFAULT_ASR_MODEL = "canary-1b-v2"
+DEFAULT_REMOTE_MODEL_ID = "whisper-1"
 DEFAULT_TEMPERATURE = 0.0
 DEFAULT_CHUNK_DURATION = 20  # seconds per chunk for long audio
 
@@ -73,7 +77,6 @@ class Config:
         self.force_cpu = force_cpu_from_env()
 
         # Model settings
-        self.model_id = os.environ.get("MODEL_ID", DEFAULT_MODEL_ID)
         self.temperature = float(os.environ.get("TEMPERATURE", DEFAULT_TEMPERATURE))
         self.chunk_duration = int(os.environ.get("CHUNK_DURATION", DEFAULT_CHUNK_DURATION))
 
@@ -123,6 +126,23 @@ class Config:
                 raise ValueError(
                     "USE_API is set but STT_API_KEY is missing. Set STT_API_KEY to your API bearer token."
                 )
+            self.model_id = os.environ.get("MODEL_ID", DEFAULT_REMOTE_MODEL_ID)
+            self.asr_model = None
+            self.resolved_asr_model = None
+        else:
+            from services.asr_models import DEFAULT_ASR_MODEL, validate_local_asr_config
+
+            self.asr_model = os.environ.get("ASR_MODEL", DEFAULT_ASR_MODEL)
+            legacy_model_id = os.environ.get("MODEL_ID", "").strip()
+            if legacy_model_id and legacy_model_id != self.asr_model:
+                logger.warning(
+                    "MODEL_ID=%s is ignored in local ASR mode; use ASR_MODEL (registry key) instead",
+                    legacy_model_id,
+                )
+            self.resolved_asr_model, _ = validate_local_asr_config(
+                self.asr_model, self.model_path
+            )
+            self.model_id = self.asr_model
 
         # Redis queue for async transcription workers
         self.redis_url = os.environ.get("REDIS_URL", "redis://redis:6379/0")
@@ -137,7 +157,19 @@ class Config:
             "yes",
         )
 
-        logger.debug(f"Initialized configuration: debug={self.debug}, model={self.model_id}")
+        if self.use_api:
+            logger.debug(
+                "Initialized configuration: debug=%s, remote_model=%s",
+                self.debug,
+                self.model_id,
+            )
+        else:
+            logger.debug(
+                "Initialized configuration: debug=%s, asr_model=%s, backend=%s",
+                self.debug,
+                self.asr_model,
+                self.resolved_asr_model.spec.backend,
+            )
 
     def update_hf_token(self, token: str) -> None:
         """Update the HuggingFace token"""
@@ -148,9 +180,17 @@ class Config:
         """Get the HuggingFace token"""
         return self.hf_token
 
+    def get_transcription_model_name(self) -> str:
+        """Model name stored on transcription results and sent to remote STT."""
+        if self.use_api:
+            return self.model_id
+        return self.asr_model
+
     def as_dict(self) -> Dict[str, Any]:
         """Return configuration as dictionary (for API responses)"""
-        return {
+        from services.asr_models import list_local_asr_model_keys
+
+        payload: Dict[str, Any] = {
             "host": self.host,
             "port": self.port,
             "debug": self.debug,
@@ -178,6 +218,17 @@ class Config:
             "queue_enabled": self.queue_enabled,
             "skip_model_load": self.skip_model_load,
         }
+        if self.use_api:
+            payload["asr_model"] = None
+            payload["asr_backend"] = None
+            payload["asr_model_display_name"] = None
+            payload["available_local_models"] = list_local_asr_model_keys()
+        else:
+            payload["asr_model"] = self.asr_model
+            payload["asr_backend"] = self.resolved_asr_model.spec.backend
+            payload["asr_model_display_name"] = self.resolved_asr_model.spec.display_name
+            payload["available_local_models"] = list_local_asr_model_keys()
+        return payload
 
 
 # Create a global instance

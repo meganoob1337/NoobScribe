@@ -98,7 +98,7 @@ def run_transcription_pipeline(
         if getattr(config, "use_api", False):
             chunk_text, chunk_segments = transcribe_api_chunk(
                 chunk_path,
-                config.model_id,
+                config.get_transcription_model_name(),
                 config,
                 language=effective_language,
             )
@@ -193,7 +193,7 @@ def run_transcription_pipeline(
         sum(len(segment.text.split()) for segment in all_segments) / 150.0 if all_segments else 0.0
     )
 
-    model_id = getattr(config, "model_id", None)
+    model_id = config.get_transcription_model_name()
     include_speakers = (
         response_format in ("json", "verbose_json") and speakers_list is not None
     )

@@ -98,7 +98,7 @@ def _build_transcription_result_row(
         full_text=pr.response.text,
         segments_json=seg_json,
         language=pr.response.language,
-        model_id=cfg.model_id,
+        model_id=cfg.get_transcription_model_name(),
         diarization_enabled=diarize,
         speakers_json=spk_json,
         duration_seconds=dur,

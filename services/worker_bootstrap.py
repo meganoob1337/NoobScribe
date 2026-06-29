@@ -41,8 +41,12 @@ def init_worker_resources() -> Tuple[Any, Optional[SpeakerDB]]:
                 cfg.model_id,
             )
         else:
-            _asr_model = load_model(cfg.model_id, model_path=cfg.model_path)
-            logger.info("Worker ASR model loaded (%s)", cfg.model_path or cfg.model_id)
+            _asr_model = load_model(cfg.resolved_asr_model)
+            logger.info(
+                "Worker ASR model loaded (%s, backend=%s)",
+                cfg.model_path or cfg.asr_model,
+                cfg.resolved_asr_model.spec.backend,
+            )
     except Exception as e:
         logger.error("Worker failed to load ASR model: %s", e)
         raise

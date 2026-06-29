@@ -1,53 +1,60 @@
 # Originally from https://github.com/jfgonsalves/parakeet-diarized (commit 6abadfd)
 # Copyright (c) jfgonsalves - MIT License
 # Modified by meganoob1337 for the NoobScribe project
-import os
 import logging
-import tempfile
-from typing import List, Optional, Dict, Any, Union, Tuple
+from typing import Any, List, Optional, Tuple
 
 import torch
-import numpy as np
 
 from config import use_cuda
-from models import WhisperSegment, TranscriptionResponse
+from models import WhisperSegment
+from services.asr_backend import load_onnx_asr_model, wrap_loaded_model
+from services.asr_models import LoadedAsrModel, ResolvedAsrModel
 
 logger = logging.getLogger(__name__)
 
-def load_model(model_id: str = "nvidia/canary-1b-v2", model_path: Optional[str] = None):
+
+def load_model(resolved: ResolvedAsrModel) -> LoadedAsrModel:
     """
-    Load the ASR model (NVIDIA NeMo, default: Canary 1B v2)
+    Load a local ASR model from a resolved registry entry.
 
     Args:
-        model_id: The HuggingFace / NeMo model ID to load when ``model_path`` is not set
-        model_path: Optional path to a local ``.nemo`` checkpoint (fully offline)
+        resolved: Validated registry resolution (backend, source, path, quantization)
 
     Returns:
-        The loaded model
+        LoadedAsrModel wrapper for backend-specific transcription
     """
+    spec = resolved.spec
     try:
-        # from nemo.collections.asr.models import EncDecMultiTaskModel
-        from nemo.collections.asr.models import EncDecCTCModelBPE
-        from nemo.collections.asr.models import ASRModel
+        if spec.backend == "nemo":
+            from nemo.collections.asr.models import ASRModel
 
-        if model_path:
-            logger.info("Loading ASR model from local path: %s", model_path)
-            model = ASRModel.restore_from(restore_path=model_path)
-        else:
-            logger.info("Loading model %s", model_id)
-            model = ASRModel.from_pretrained(model_name=model_id)
+            hf_id = spec.source.hf_id
+            assert hf_id is not None
+            if resolved.effective_path:
+                logger.info("Loading NeMo ASR model from local path: %s", resolved.effective_path)
+                model = ASRModel.restore_from(restore_path=resolved.effective_path)
+            else:
+                logger.info("Loading NeMo ASR model %s (%s)", spec.id, hf_id)
+                model = ASRModel.from_pretrained(model_name=hf_id)
 
-        # Move model to GPU if available (unless FORCE_CPU=1)
-        if use_cuda():
-            model = model.cuda()
-            logger.info(f"Model loaded on GPU: {torch.cuda.get_device_name(0)}")
-        else:
-            logger.warning("Running on CPU (will be slow)")
+            if use_cuda():
+                model = model.cuda()
+                logger.info("Model loaded on GPU: %s", torch.cuda.get_device_name(0))
+            else:
+                logger.warning("Running on CPU (will be slow)")
 
-        return model
+            return wrap_loaded_model(resolved, model)
+
+        if spec.backend == "onnx":
+            model = load_onnx_asr_model(resolved)
+            return wrap_loaded_model(resolved, model)
+
+        raise ValueError(f"Unsupported ASR backend: {spec.backend}")
     except Exception as e:
-        logger.error(f"Error loading model: {str(e)}")
+        logger.error("Error loading ASR model %s: %s", spec.id, e)
         raise
+
 
 def _format_timestamp(seconds: float, always_include_hours: bool = False,
                      decimal_marker: str = '.') -> str:
@@ -75,6 +82,7 @@ def _format_timestamp(seconds: float, always_include_hours: bool = False,
     else:  # VTT format
         return f"{hours_marker}{minutes:02d}:{seconds:06.3f}"
 
+
 def format_srt(segments: List[WhisperSegment]) -> str:
     """
     Format segments as SRT subtitle format
@@ -98,6 +106,7 @@ def format_srt(segments: List[WhisperSegment]) -> str:
 
     return srt_content.strip()
 
+
 def format_vtt(segments: List[WhisperSegment]) -> str:
     """
     Format segments as WebVTT subtitle format
@@ -120,65 +129,129 @@ def format_vtt(segments: List[WhisperSegment]) -> str:
 
     return vtt_content.strip()
 
-def transcribe_audio_chunk(model, audio_path: str, language: Optional[str] = None,
-                          word_timestamps: bool = False) -> Tuple[str, List[WhisperSegment]]:
+
+def _segments_from_onnx_result(result: Any) -> Tuple[str, List[WhisperSegment]]:
+    """Map onnx-asr timestamped output to WhisperSegment list."""
+    if isinstance(result, list):
+        if not result:
+            return "", []
+        if all(hasattr(item, "start") and hasattr(item, "end") for item in result):
+            segments = [
+                WhisperSegment(id=i, start=float(item.start), end=float(item.end), text=str(item.text))
+                for i, item in enumerate(result)
+            ]
+            text = " ".join(segment.text for segment in segments).strip()
+            return text, segments
+        result = result[0]
+
+    if hasattr(result, "start") and hasattr(result, "end"):
+        text = str(getattr(result, "text", "") or "")
+        return text, [
+            WhisperSegment(
+                id=0,
+                start=float(result.start),
+                end=float(result.end),
+                text=text,
+            )
+        ]
+
+    text = str(getattr(result, "text", result) or "")
+    if not text:
+        return "", []
+    return text, [
+        WhisperSegment(
+            id=0,
+            start=0.0,
+            end=max(len(text.split()) / 2.0, 0.1),
+            text=text,
+        )
+    ]
+
+
+def _transcribe_nemo_chunk(
+    model: Any,
+    audio_path: str,
+    language: Optional[str],
+) -> Tuple[str, List[WhisperSegment]]:
+    with torch.no_grad():
+        transcription = model.transcribe(
+            [audio_path],
+            source_lang=language,
+            target_lang=language,
+            timestamps=True,
+        )
+    logger.info("NeMo transcription of chunk %s", transcription)
+
+    if not transcription:
+        logger.warning("No transcription generated for %s", audio_path)
+        return "", []
+
+    result = transcription[0]
+    text = result.text
+    segments: List[WhisperSegment] = []
+
+    if hasattr(result, "timestamp") and result.timestamp and "segment" in result.timestamp:
+        for i, stamp in enumerate(result.timestamp["segment"]):
+            segments.append(
+                WhisperSegment(
+                    id=i,
+                    start=stamp["start"],
+                    end=stamp["end"],
+                    text=stamp["segment"],
+                )
+            )
+    else:
+        segments.append(
+            WhisperSegment(
+                id=0,
+                start=0.0,
+                end=len(text.split()) / 2.0,
+                text=text,
+            )
+        )
+    return text, segments
+
+
+def _transcribe_onnx_chunk(
+    model: Any,
+    audio_path: str,
+    language: Optional[str],
+) -> Tuple[str, List[WhisperSegment]]:
+    kwargs = {}
+    if language:
+        kwargs["language"] = language
+        kwargs["target_language"] = language
+    result = model.recognize(audio_path, **kwargs)
+    text, segments = _segments_from_onnx_result(result)
+    logger.info("ONNX transcription of chunk: %s", text[:120] if text else "")
+    return text, segments
+
+
+def transcribe_audio_chunk(
+    loaded: LoadedAsrModel,
+    audio_path: str,
+    language: Optional[str] = None,
+    word_timestamps: bool = False,
+) -> Tuple[str, List[WhisperSegment]]:
     """
-    Transcribe a single audio chunk using the loaded NeMo ASR model
+    Transcribe a single audio chunk using the loaded local ASR model.
 
     Args:
-        model: The loaded ASR model
+        loaded: LoadedAsrModel from load_model()
         audio_path: Path to the audio file
         language: Optional language code
-        word_timestamps: Whether to generate word-level timestamps
+        word_timestamps: Whether to generate word-level timestamps (NeMo only today)
 
     Returns:
         Tuple of (transcription text, list of WhisperSegment objects)
     """
+    _ = word_timestamps
     try:
-        # Use the NeMo model to transcribe audio
-        with torch.no_grad():
-            # Simply pass the audio path(s) as a list to the transcribe method
-            transcription = model.transcribe(
-                [audio_path],
-                source_lang=language,
-                target_lang=language,
-                # taskname="asr",
-                # batch_size=1,
-                timestamps=True  # Always request timestamps for segmentation
-            )
-        logger.info(f"Transcription of chunk  {transcription}")
-
-        # Extract the text from the result
-        if not transcription or len(transcription) == 0:
-            logger.warning(f"No transcription generated for {audio_path}")
-            return "", []
-
-        result = transcription[0]  # Get the first result
-        text = result.text
-
-        # Create segments from the timestamp information if available
-        segments = []
-
-        # Check if we have timestamp information
-        if hasattr(result, 'timestamp') and 'segment' in result.timestamp:
-            for i, stamp in enumerate(result.timestamp['segment']):
-                segments.append(WhisperSegment(
-                    id=i,
-                    start=stamp['start'],
-                    end=stamp['end'],
-                    text=stamp['segment']
-                ))
-        else:
-            # If no segments available, create a single segment for the entire chunk
-            segments.append(WhisperSegment(
-                id=0,
-                start=0.0,
-                end=len(text.split()) / 2.0,  # Rough estimate based on word count
-                text=text
-            ))
-
-        return text, segments
-
+        if loaded.backend == "nemo":
+            return _transcribe_nemo_chunk(loaded.model, audio_path, language)
+        if loaded.backend == "onnx":
+            return _transcribe_onnx_chunk(loaded.model, audio_path, language)
+        raise ValueError(f"Unsupported ASR backend: {loaded.backend}")
     except Exception as e:
-        logger.error(f"Error transcribing audio chunk: {str(e)}")
+        logger.error("Error transcribing audio chunk: %s", e)
         return "", []

@@ -123,8 +123,10 @@ Pinned dependencies for the **CPU** image are in **`requirements.lock.txt`** ([`
 | `USE_API` | `1` / `true` / `yes` to use remote OpenAI-compatible STT instead of local NeMo (requires `STT_BASE_URL`, `STT_API_KEY`) |
 | `STT_BASE_URL` | OpenAI-compatible API base URL (e.g. `https://api.openai.com/v1`) |
 | `STT_API_KEY` | Bearer token for the STT API |
-| `MODEL_ID` | NeMo model id when local (default `nvidia/canary-1b-v2`); remote `model` name when `USE_API` is set (e.g. `whisper-1`) |
-| `MODEL_PATH` | Local NeMo `.nemo` (offline ASR) |
+| `MODEL_ID` | `whisper-1` | **Remote API mode only** (`USE_API=1`): freeform remote `model` name. |
+| `ASR_MODEL` | `canary-1b-v2` | **Local mode:** registry key from `config/asr_models.yaml`. Unknown keys fail at startup. |
+| `ASR_MODELS_CONFIG` | _(unset)_ | Optional path to a custom ASR model registry YAML file. |
+| `MODEL_PATH` | Local NeMo `.nemo` or ONNX directory when the selected registry entry allows override |
 | `DIARIZATION_MODEL_PATH` | Local pyannote pipeline directory |
 | `TEMPERATURE` | Sampling temperature |
 | `CHUNK_DURATION` | Chunk length in seconds |

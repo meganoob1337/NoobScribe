@@ -1,0 +1,29 @@
+# Curated local ASR models for NoobScribe.
+# ASR_MODEL must be one of the keys under `models`.
+# Remote STT (USE_API=1) uses freeform MODEL_ID instead.
+
+models:
+  canary-1b-v2:
+    display_name: "NVIDIA Canary 1B v2 (NeMo)"
+    backend: nemo
+    source:
+      hf_id: nvidia/canary-1b-v2
+    allow_path_override: true
+
+  canary-1b-v2-onnx-int8:
+    display_name: "NVIDIA Canary 1B v2 (ONNX int8)"
+    backend: onnx
+    source:
+      onnx_asr_name: nemo-canary-1b-v2
+      hf_repo: istupakov/canary-1b-v2-onnx
+    quantization: int8
+    allow_path_override: true
+
+  canary-1b-v2-onnx:
+    display_name: "NVIDIA Canary 1B v2 (ONNX fp32)"
+    backend: onnx
+    source:
+      onnx_asr_name: nemo-canary-1b-v2
+      hf_repo: istupakov/canary-1b-v2-onnx
+    quantization: null
+    allow_path_override: true

@@ -17,7 +17,8 @@ Use case: run a zero-install transcription workflow from the browser - upload me
 - **Speaker embedding memory** ([**Chroma**](https://www.trychroma.com/)) with display names and re-matching across stored transcripts
 - **Recording library** ([**SQLAlchemy**](https://www.sqlalchemy.org/) + SQLite + on-disk audio) and **Web UI** at `/ui` (transcript view: per-segment play/pause via `GET /v1/audio/snippet`, streams only on play)
 - Optional **spoken language ID** ([**SpeechBrain**](https://speechbrain.github.io/) · [VoxLingua107 ECAPA](https://huggingface.co/speechbrain/lang-id-voxlingua107-ecapa)) when `language` is omitted — up to three 30s samples (start / middle / 75%), majority vote; shorter clips use one sample
-- Offline options: `MODEL_PATH` ([NeMo](https://github.com/NVIDIA/NeMo) `.nemo`), `DIARIZATION_MODEL_PATH` (local [**Pyannote**](https://github.com/pyannote/pyannote-audio) pipeline)
+- Offline options: `MODEL_PATH` (local NeMo `.nemo` or ONNX model directory when the registry entry allows it), `DIARIZATION_MODEL_PATH` (local [**Pyannote**](https://github.com/pyannote/pyannote-audio) pipeline)
+- **Curated local ASR models** — `ASR_MODEL` selects a key from [`config/asr_models.yaml`](config/asr_models.yaml) (NeMo Canary, ONNX Canary int8/fp32 via [onnx-asr](https://istupakov.github.io/onnx-asr/)); unknown keys fail at startup
 
 Full endpoint reference: **[API_DOCUMENTATION.md](API_DOCUMENTATION.md)**
 
@@ -52,7 +53,7 @@ flowchart LR
     API --> DB[(SQLite + audio files)]
     Redis --> Worker[RQ worker]
     Worker --> DB
-    Worker --> ASR[NeMo / remote STT]
+    Worker --> ASR[NeMo / ONNX / remote STT]
     Worker --> Diar[Pyannote diarization]
     Worker --> Chroma[Chroma speaker memory]
 ```
@@ -155,11 +156,12 @@ SKIP_MODEL_LOAD=1 ./run.sh --port 8000
 
 | Variable | Default | Notes |
 |----------|---------|--------|
-| `USE_API` | _(unset)_ | Set to `1` / `true` / `yes` to transcribe via a **remote OpenAI-compatible Whisper API** instead of local NeMo. Requires **`STT_BASE_URL`** and **`STT_API_KEY`**. **Diarization still runs locally** (pyannote / `DIARIZATION_MODEL_PATH`); you still need `HUGGINGFACE_ACCESS_TOKEN` or an offline diarization path when diarization is enabled. |
+| `USE_API` | _(unset)_ | Set to `1` / `true` / `yes` to transcribe via a **remote OpenAI-compatible Whisper API** instead of local ASR. Requires **`STT_BASE_URL`** and **`STT_API_KEY`**. **Diarization still runs locally** (pyannote / `DIARIZATION_MODEL_PATH`); you still need `HUGGINGFACE_ACCESS_TOKEN` or an offline diarization path when diarization is enabled. |
 | `STT_BASE_URL` | _(unset)_ | Base URL for the remote STT service (e.g. `https://api.openai.com/v1`). Required when `USE_API` is set. |
 | `STT_API_KEY` | _(unset)_ | API key for the remote STT service. Required when `USE_API` is set. |
-| `MODEL_ID` | `nvidia/canary-1b-v2` | **Local mode:** [Canary](https://huggingface.co/nvidia/canary-1b-v2) / [NeMo](https://github.com/NVIDIA/NeMo) from Hugging Face. **API mode:** passed to the remote API as the `model` name (e.g. `whisper-1`). |
-| `MODEL_PATH` | _(unset)_ | Local [NeMo](https://github.com/NVIDIA/NeMo) `.nemo` checkpoint (offline ASR) |
+| `ASR_MODEL` | `canary-1b-v2` | **Local mode:** registry key from [`config/asr_models.yaml`](config/asr_models.yaml) (`canary-1b-v2`, `canary-1b-v2-onnx-int8`, `canary-1b-v2-onnx`, …). Unknown keys error at startup. **Ignored when `USE_API` is set.** |
+| `MODEL_ID` | `whisper-1` | **Remote API mode only** (`USE_API=1`): freeform model name sent to the remote STT API. Ignored in local mode (use `ASR_MODEL`). |
+| `MODEL_PATH` | _(unset)_ | Optional offline path when the selected `ASR_MODEL` entry has `allow_path_override: true` (NeMo `.nemo` or ONNX model directory) |
 | `DIARIZATION_MODEL_PATH` | _(unset)_ | Local [Pyannote](https://github.com/pyannote/pyannote-audio) pipeline dir |
 | `HUGGINGFACE_ACCESS_TOKEN` | _(unset)_ | For [pyannote/speaker-diarization-community-1](https://huggingface.co/pyannote/speaker-diarization-community-1) when not offline; Pyannote models are **gated** on Hugging Face — you must accept the terms on each model card (see note below) |
 | `DATABASE_URL` | `sqlite+aiosqlite:///./data/noobscribe.db` | Recordings metadata |
@@ -171,7 +173,13 @@ SKIP_MODEL_LOAD=1 ./run.sh --port 8000
 | `FORCE_CPU` | _(unset)_ | When `1`/`true`/`yes`, use CPU for ASR, diarization, and language ID even if CUDA is available; **Dockerfile.cpu** sets this by default |
 | `REDIS_URL` | `redis://redis:6379/0` | Redis connection for the transcription job queue |
 | `QUEUE_TRANSCRIPTION` | `1` | When `0`, enqueue endpoints return `503` |
-| `SKIP_MODEL_LOAD` | unset (`1` in Docker API) | API skips NeMo load; run `python -m workers.run` for transcription |
+| `SKIP_MODEL_LOAD` | unset (`1` in Docker API) | API skips ASR load; run `python -m workers.run` for transcription |
+
+**Local ASR models** are defined in [`config/asr_models.yaml`](config/asr_models.yaml). To add a model, add an entry there (backend, source, quantization). `GET /v1/models` lists configured keys in local mode.
+
+**ONNX Canary** (`ASR_MODEL=canary-1b-v2-onnx-int8`) uses [onnx-asr](https://istupakov.github.io/onnx-asr/) with [istupakov/canary-1b-v2-onnx](https://huggingface.co/istupakov/canary-1b-v2-onnx). Install `onnx-asr[cpu,hub]` or `onnx-asr[gpu,hub]` (Docker images include the matching extra). ONNX Runtime providers (CPU vs CUDA) are chosen automatically from the environment.
+
+**Migrating from `MODEL_ID=nvidia/canary-1b-v2`:** use `ASR_MODEL=canary-1b-v2` instead.
 
 **Gated Pyannote models:** The **pyannote-audio** checkpoints used for diarization (including the default pipeline and any sub-models it pulls) are hosted on Hugging Face under **gated** repositories. Create a [Hugging Face access token](https://huggingface.co/settings/tokens), then visit each required model page while logged in and **accept the user conditions** (e.g. “Agree and access repository”). Until you do, `huggingface_hub` may return access errors even with a valid token.
 

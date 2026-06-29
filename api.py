@@ -140,13 +140,12 @@ def create_app() -> FastAPI:
             else:
                 logger.warning("Using CPU for inference (this will be slow)")
 
-            model_id = config.model_id
             if getattr(config, "use_api", False):
                 asr_model = None
                 logger.info(
                     "Using remote STT API at %s (model=%s)",
                     config.stt_base_url,
-                    model_id,
+                    config.model_id,
                 )
             elif config.queue_enabled or config.skip_model_load:
                 asr_model = None
@@ -155,8 +154,12 @@ def create_app() -> FastAPI:
                     config.queue_enabled,
                 )
             else:
-                asr_model = load_model(model_id, model_path=config.model_path)
-                logger.info("ASR model loaded (%s)", config.model_path or model_id)
+                asr_model = load_model(config.resolved_asr_model)
+                logger.info(
+                    "ASR model loaded (%s, backend=%s)",
+                    config.model_path or config.asr_model,
+                    config.resolved_asr_model.spec.backend,
+                )
         except Exception as e:
             logger.error("Error loading ASR model during startup: %s", str(e))
 
@@ -288,7 +291,13 @@ def create_app() -> FastAPI:
             "version": "1.0.0",
             "model_loaded": asr_model is not None or getattr(config, "use_api", False),
             "speaker_db_initialized": init_speaker_db(),
-            "model_id": config.model_id,
+            "model_id": config.get_transcription_model_name(),
+            "asr_model": getattr(config, "asr_model", None),
+            "asr_backend": (
+                config.resolved_asr_model.spec.backend
+                if getattr(config, "resolved_asr_model", None) is not None
+                else None
+            ),
             "force_cpu": config.force_cpu,
             "cuda_available": use_cuda(),
             "gpu_info": torch.cuda.get_device_name(0) if use_cuda() else None,
@@ -304,30 +313,59 @@ def create_app() -> FastAPI:
         """
         List available models (compatibility with OpenAI API)
         """
-        models = [
-            ModelInfo(
-                id="whisper-1",
-                created=1677649963,
-                owned_by="noobscribe",
-                root="whisper-1",
-                permission=[
-                    {
-                        "id": "modelperm-1",
-                        "object": "model_permission",
-                        "created": 1677649963,
-                        "allow_create_engine": False,
-                        "allow_sampling": True,
-                        "allow_logprobs": True,
-                        "allow_search_indices": False,
-                        "allow_view": True,
-                        "allow_fine_tuning": False,
-                        "organization": "*",
-                        "group": None,
-                        "is_blocking": False,
-                    }
-                ],
-            )
-        ]
+        from services.asr_models import list_local_asr_models
+
+        if getattr(config, "use_api", False):
+            models = [
+                ModelInfo(
+                    id=config.model_id,
+                    created=1677649963,
+                    owned_by="noobscribe",
+                    root=config.model_id,
+                    permission=[
+                        {
+                            "id": "modelperm-remote",
+                            "object": "model_permission",
+                            "created": 1677649963,
+                            "allow_create_engine": False,
+                            "allow_sampling": True,
+                            "allow_logprobs": True,
+                            "allow_search_indices": False,
+                            "allow_view": True,
+                            "allow_fine_tuning": False,
+                            "organization": "*",
+                            "group": None,
+                            "is_blocking": False,
+                        }
+                    ],
+                )
+            ]
+        else:
+            models = [
+                ModelInfo(
+                    id=spec.id,
+                    created=1677649963,
+                    owned_by="noobscribe",
+                    root=spec.id,
+                    permission=[
+                        {
+                            "id": f"modelperm-{spec.id}",
+                            "object": "model_permission",
+                            "created": 1677649963,
+                            "allow_create_engine": False,
+                            "allow_sampling": True,
+                            "allow_logprobs": True,
+                            "allow_search_indices": False,
+                            "allow_view": True,
+                            "allow_fine_tuning": False,
+                            "organization": "*",
+                            "group": None,
+                            "is_blocking": False,
+                        }
+                    ],
+                )
+                for spec in list_local_asr_models()
+            ]
 
         return ModelList(data=models)
 
