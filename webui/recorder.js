@@ -20,6 +20,29 @@
     return "";
   }
 
+  function buildDisplayMediaOptions() {
+    return {
+      video: true,
+      audio: true,
+      systemAudio: "include",
+      windowAudio: "window",
+      selfBrowserSurface: "exclude",
+      monitorTypeSurfaces: "include",
+      surfaceSwitching: "include",
+    };
+  }
+
+  async function requestDisplayMediaWithAudio() {
+    try {
+      return await navigator.mediaDevices.getDisplayMedia(buildDisplayMediaOptions());
+    } catch (err) {
+      if (err && (err.name === "OverconstrainedError" || err.name === "TypeError")) {
+        return await navigator.mediaDevices.getDisplayMedia({ audio: true, video: true });
+      }
+      throw err;
+    }
+  }
+
   function rmsFromAnalyser(analyser, scratch) {
     if (!analyser) return 0;
     const len = analyser.frequencyBinCount;
@@ -82,14 +105,13 @@
         throw new Error("Screen/window capture not supported in this browser");
       }
       this.stopWindowCapture();
-      const stream = await navigator.mediaDevices.getDisplayMedia({
-        audio: true,
-        video: true,
-      });
+      const stream = await requestDisplayMediaWithAudio();
       const audioTracks = stream.getAudioTracks();
       if (!audioTracks.length) {
         stream.getTracks().forEach((t) => t.stop());
-        throw new Error("No audio track from selection. Try a browser tab or full screen.");
+        throw new Error(
+          "No audio track from selection. Pick a browser tab or entire screen, enable Share tab/system audio in the picker, then try again."
+        );
       }
       this._windowStream = stream;
       const audioOnly = new MediaStream(audioTracks);

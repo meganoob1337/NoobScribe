@@ -56,7 +56,7 @@ Navigation uses `location.hash` (no server-side router). `hashchange` triggers p
 
 Implemented by **`NoobScribeRecorder`** (`recorder.js`):
 
-- **Window/tab audio**: `getDisplayMedia` with audio + video; video tracks stopped after connect; requires an audio track or shows an error.
+- **Window/tab audio**: `getDisplayMedia` with audio + video and explicit Chrome hints (`systemAudio: "include"`, `windowAudio: "window"`, plus `selfBrowserSurface: "exclude"`, `monitorTypeSurfaces: "include"`, `surfaceSwitching: "include"`); falls back to `{ audio: true, video: true }` on older browsers that reject unknown options. Video tracks stopped after connect; requires an audio track or shows an error. Users must enable **Share tab/system audio** in the browser picker (Chrome 141+).
 - **Microphone**: `getUserMedia({ audio: true })`.
 - **Mixing**: Web Audio API — sources → gain → analyser (levels) + `MediaStreamDestination`; **MediaRecorder** on the mixed stream (prefers WebM/Opus).
 - **UI**: Toggle window vs mic; **level meters** (RMS 0–1, updated via `requestAnimationFrame` while on route); states `idle` | `capturing` | `recording` | `recorded`.
@@ -66,7 +66,7 @@ Implemented by **`NoobScribeRecorder`** (`recorder.js`):
 - **Upload**: Builds `File` named `recording.webm` from blob → `POST /v1/recordings` → navigates to detail; then tears down recorder state.
 - **Discard**: Revokes URL, clears blob.
 
-Rebuild note: permissions UX, codec support, and “tab vs window” audio behavior are browser-dependent; the UI includes short copy explaining tab/screen share for system audio.
+Rebuild note: permissions UX, codec support, and “tab vs window” audio behavior are browser-dependent; the UI includes short copy explaining tab/screen share and the share-audio checkbox in Chrome/Edge.
 
 ## Feature: recording detail (`detail`)
 
