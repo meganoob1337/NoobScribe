@@ -15,11 +15,13 @@ from models import WhisperSegment
 
 class TestTranscriptionPipelineOrdering(unittest.TestCase):
     @patch("services.transcription_pipeline.transcribe_api_chunk")
-    @patch("services.transcription_pipeline.split_audio_into_chunks", return_value=["chunk.wav"])
+    @patch("services.transcription_pipeline.split_audio_into_chunks")
     @patch("services.transcription_pipeline.resolve_transcription_language", return_value="en")
-    def test_diarizer_unloaded_before_transcription(self, _mock_lang, _mock_split, mock_transcribe):
+    def test_diarizer_unloaded_before_transcription(self, _mock_lang, mock_split, mock_transcribe):
+        from audio import AudioChunk
         from services.transcription_pipeline import run_transcription_pipeline
 
+        mock_split.return_value = [AudioChunk(path="chunk.wav", start_sec=0.0)]
         events: list[str] = []
 
         @contextmanager
@@ -44,7 +46,10 @@ class TestTranscriptionPipelineOrdering(unittest.TestCase):
         mock_transcribe.side_effect = track_transcribe
         config = MagicMock()
         config.use_api = True
-        config.chunk_duration = 10
+        config.chunk_min_duration = 15
+        config.chunk_max_duration = 30
+        config.chunk_silence_db = -40.0
+        config.chunk_silence_min_duration = 0.3
         config.diarization_model_path = "/models/diarization"
         config.get_hf_token.return_value = None
         config.include_diarization_in_text = False
@@ -61,6 +66,44 @@ class TestTranscriptionPipelineOrdering(unittest.TestCase):
             )
 
         self.assertEqual(events, ["diarizer_enter", "diarizer_exit", "transcribe"])
+
+    @patch("services.transcription_pipeline.transcribe_api_chunk")
+    @patch("services.transcription_pipeline.split_audio_into_chunks")
+    @patch("services.transcription_pipeline.resolve_transcription_language", return_value="en")
+    def test_segment_timestamps_use_chunk_start(self, _mock_lang, mock_split, mock_transcribe):
+        from audio import AudioChunk
+        from services.transcription_pipeline import run_transcription_pipeline
+
+        mock_split.return_value = [
+            AudioChunk(path="c0.wav", start_sec=0.0),
+            AudioChunk(path="c1.wav", start_sec=23.0),
+        ]
+        mock_transcribe.side_effect = [
+            ("a", [WhisperSegment(id=0, start=0.0, end=1.0, text="a")]),
+            ("b", [WhisperSegment(id=0, start=0.5, end=1.5, text="b")]),
+        ]
+        config = MagicMock()
+        config.use_api = True
+        config.chunk_min_duration = 15
+        config.chunk_max_duration = 30
+        config.chunk_silence_db = -40.0
+        config.chunk_silence_min_duration = 0.3
+        config.include_diarization_in_text = False
+        config.get_transcription_model_name.return_value = "whisper-1"
+
+        result = run_transcription_pipeline(
+            "audio.wav",
+            None,
+            config,
+            None,
+            diarize=False,
+            timestamps=True,
+        )
+        segments = result.all_segments
+        self.assertEqual(len(segments), 2)
+        self.assertAlmostEqual(segments[0].start, 0.0)
+        self.assertAlmostEqual(segments[1].start, 23.5)
+        self.assertAlmostEqual(segments[1].end, 24.5)
 
 
 if __name__ == "__main__":

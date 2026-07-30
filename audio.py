@@ -2,15 +2,31 @@
 # Copyright (c) jfgonsalves - MIT License
 # Modified by meganoob1337 for the NoobScribe project
 import os
+import re
 import tempfile
 import logging
 import subprocess
-import math
 import wave
-from typing import List, Optional, Dict, Any, Union
-from pathlib import Path
+from dataclasses import dataclass
+from typing import List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_CHUNK_MIN_DURATION = 15.0
+DEFAULT_CHUNK_MAX_DURATION = 30.0
+DEFAULT_CHUNK_SILENCE_DB = -40.0
+DEFAULT_CHUNK_SILENCE_MIN_DURATION = 0.3
+
+_SILENCE_START_RE = re.compile(r"silence_start:\s*([-0-9.]+)")
+_SILENCE_END_RE = re.compile(r"silence_end:\s*([-0-9.]+)")
+
+
+@dataclass
+class AudioChunk:
+    """One ASR chunk cut from a longer WAV, with absolute start time."""
+
+    path: str
+    start_sec: float
 
 
 def get_wav_duration_seconds(audio_path: str) -> Optional[float]:
@@ -29,72 +45,192 @@ def get_wav_duration_seconds(audio_path: str) -> Optional[float]:
         return None
 
 
-def split_audio_into_chunks(audio_path: str, chunk_duration: int = 300) -> List[str]:
+def detect_silence_intervals(
+    audio_path: str,
+    *,
+    silence_db: float = DEFAULT_CHUNK_SILENCE_DB,
+    silence_min_duration: float = DEFAULT_CHUNK_SILENCE_MIN_DURATION,
+) -> List[Tuple[float, float]]:
     """
-    Split a long audio file into smaller chunks for processing.
-    
-    Args:
-        audio_path: Path to the audio file
-        chunk_duration: Duration of each chunk in seconds (default: 5 minutes)
-        
+    Run ffmpeg silencedetect and return list of (start, end) silence intervals.
+    """
+    cmd = [
+        "ffmpeg",
+        "-hide_banner",
+        "-i",
+        audio_path,
+        "-af",
+        f"silencedetect=noise={silence_db}dB:d={silence_min_duration}",
+        "-f",
+        "null",
+        "-",
+    ]
+    logger.debug("Running silence detection: %s", " ".join(cmd))
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    # silencedetect writes to stderr; non-zero can still contain useful output
+    stderr = result.stderr or ""
+
+    intervals: List[Tuple[float, float]] = []
+    current_start: Optional[float] = None
+    for line in stderr.splitlines():
+        start_match = _SILENCE_START_RE.search(line)
+        if start_match:
+            current_start = float(start_match.group(1))
+            continue
+        end_match = _SILENCE_END_RE.search(line)
+        if end_match and current_start is not None:
+            end = float(end_match.group(1))
+            if end > current_start:
+                intervals.append((current_start, end))
+            current_start = None
+
+    if current_start is not None:
+        duration = get_wav_duration_seconds(audio_path)
+        if duration is not None and duration > current_start:
+            intervals.append((current_start, duration))
+
+    return intervals
+
+
+def choose_chunk_boundaries(
+    duration: float,
+    silences: List[Tuple[float, float]],
+    *,
+    min_duration: float = DEFAULT_CHUNK_MIN_DURATION,
+    max_duration: float = DEFAULT_CHUNK_MAX_DURATION,
+) -> List[float]:
+    """
+    Return cut times (absolute seconds), including 0 and duration.
+
+    Prefers the longest silence whose midpoint falls in
+    [cursor + min_duration, cursor + max_duration]; otherwise force-cuts at max.
+    """
+    if duration <= 0:
+        return [0.0, 0.0]
+    if min_duration <= 0 or max_duration < min_duration:
+        raise ValueError(
+            f"Invalid chunk duration bounds: min={min_duration}, max={max_duration}"
+        )
+    if duration <= max_duration:
+        return [0.0, duration]
+
+    cuts = [0.0]
+    cursor = 0.0
+    while cursor + max_duration < duration:
+        window_start = cursor + min_duration
+        window_end = cursor + max_duration
+        best: Optional[Tuple[float, float, float]] = None  # (length, mid, cut)
+        for silence_start, silence_end in silences:
+            mid = (silence_start + silence_end) / 2.0
+            if window_start <= mid <= window_end:
+                length = silence_end - silence_start
+                if best is None or length > best[0] or (
+                    length == best[0] and mid < best[1]
+                ):
+                    best = (length, mid, mid)
+        if best is not None:
+            cut = best[2]
+        else:
+            cut = window_end
+        if cut <= cursor:
+            cut = window_end
+        cuts.append(cut)
+        cursor = cut
+
+    cuts.append(duration)
+    return cuts
+
+
+def _extract_chunk(
+    audio_path: str,
+    start_sec: float,
+    duration_sec: float,
+    output_path: str,
+) -> None:
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-ss",
+        str(start_sec),
+        "-i",
+        audio_path,
+        "-t",
+        str(duration_sec),
+        "-c:a",
+        "pcm_s16le",
+        "-ar",
+        "16000",
+        "-ac",
+        "1",
+        output_path,
+    ]
+    logger.debug("Running ffmpeg chunk extract: %s", " ".join(cmd))
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        logger.error("Error splitting audio chunk: %s", result.stderr)
+        raise Exception(f"Failed to split audio: {result.stderr}")
+
+
+def split_audio_into_chunks(
+    audio_path: str,
+    *,
+    min_duration: float = DEFAULT_CHUNK_MIN_DURATION,
+    max_duration: float = DEFAULT_CHUNK_MAX_DURATION,
+    silence_db: float = DEFAULT_CHUNK_SILENCE_DB,
+    silence_min_duration: float = DEFAULT_CHUNK_SILENCE_MIN_DURATION,
+) -> List[AudioChunk]:
+    """
+    Split a long audio file at speaking pauses into chunks of roughly
+    ``min_duration``–``max_duration`` seconds.
+
     Returns:
-        List of paths to the chunked audio files
+        List of AudioChunk (path + absolute start time). Short files are
+        returned as a single chunk pointing at the original path.
     """
     try:
-        # Check audio duration using wave module
-        with wave.open(audio_path, 'rb') as wf:
-            frames = wf.getnframes()
-            rate = wf.getframerate()
-            duration = frames / rate
-            
-        logger.info(f"Audio duration: {duration:.2f} seconds")
-        
-        # If duration is less than chunk_duration, no need to split
-        if duration <= chunk_duration:
-            logger.info("Audio is shorter than chunk duration, no splitting needed")
-            return [audio_path]
-            
-        # Calculate number of chunks
-        num_chunks = math.ceil(duration / chunk_duration)
-        logger.info(f"Splitting audio into {num_chunks} chunks")
-        
-        # Create temporary directory for chunks
+        duration = get_wav_duration_seconds(audio_path)
+        if duration is None:
+            raise Exception(f"Could not read duration for {audio_path}")
+
+        logger.info("Audio duration: %.2f seconds", duration)
+
+        if duration <= max_duration:
+            logger.info("Audio is within max chunk duration, no splitting needed")
+            return [AudioChunk(path=audio_path, start_sec=0.0)]
+
+        silences = detect_silence_intervals(
+            audio_path,
+            silence_db=silence_db,
+            silence_min_duration=silence_min_duration,
+        )
+        logger.info("Detected %s silence intervals for chunking", len(silences))
+
+        boundaries = choose_chunk_boundaries(
+            duration,
+            silences,
+            min_duration=min_duration,
+            max_duration=max_duration,
+        )
+        num_chunks = len(boundaries) - 1
+        logger.info("Splitting audio into %s pause-aware chunks", num_chunks)
+
         temp_dir = tempfile.mkdtemp()
-        chunk_paths = []
-        
-        # Process each chunk
+        chunks: List[AudioChunk] = []
+
         for i in range(num_chunks):
-            start_time = i * chunk_duration
+            start_time = boundaries[i]
+            end_time = boundaries[i + 1]
+            chunk_len = end_time - start_time
             output_path = os.path.join(temp_dir, f"chunk_{i}.wav")
-            
-            # Use ffmpeg to extract chunk
-            cmd = [
-                "ffmpeg",
-                "-y",  # Overwrite output files
-                "-ss", str(start_time),  # Start time
-                "-i", audio_path,  # Input file
-                "-t", str(chunk_duration),  # Duration to extract
-                "-c:a", "pcm_s16le",  # Audio codec
-                "-ar", "16000",  # Sample rate
-                "-ac", "1",  # Mono audio
-                output_path
-            ]
-            
-            logger.debug(f"Running ffmpeg command: {' '.join(cmd)}")
-            result = subprocess.run(cmd, capture_output=True, text=True)
-            
-            if result.returncode != 0:
-                logger.error(f"Error splitting audio chunk {i}: {result.stderr}")
-                raise Exception(f"Failed to split audio: {result.stderr}")
-                
-            chunk_paths.append(output_path)
-            
-        return chunk_paths
-        
+            _extract_chunk(audio_path, start_time, chunk_len, output_path)
+            chunks.append(AudioChunk(path=output_path, start_sec=start_time))
+
+        return chunks
+
     except Exception as e:
-        logger.error(f"Error splitting audio: {str(e)}")
-        # If there's an error, return the original file
-        return [audio_path]
+        logger.error("Error splitting audio: %s", e)
+        return [AudioChunk(path=audio_path, start_sec=0.0)]
+
 
 def convert_audio_to_wav(audio_path: str) -> str:
     """

@@ -168,7 +168,10 @@ SKIP_MODEL_LOAD=1 ./run.sh --port 8000
 | `CHROMADB_PATH` | `./data/speakers` | [Chroma](https://www.trychroma.com/) speaker embedding store |
 | `RECORDINGS_PATH` | `./data/recordings` | Uploaded audio |
 | `TEMP_DIR` | `/tmp/noobscribe` | Temp transcoding |
-| `CHUNK_DURATION` | `20` | Chunk length (seconds) for long files |
+| `CHUNK_MIN_DURATION` | `15` | Earliest pause cut after a chunk starts (seconds) |
+| `CHUNK_MAX_DURATION` | `30` | Latest cut / force-split length (seconds) |
+| `CHUNK_SILENCE_DB` | `-40` | ffmpeg `silencedetect` noise threshold (dB) |
+| `CHUNK_SILENCE_MIN_DURATION` | `0.3` | Minimum pause length to treat as a cut point (seconds) |
 | `SPEAKER_SIMILARITY_THRESHOLD` | `0.7` | Cosine similarity for speaker match |
 | `FORCE_CPU` | _(unset)_ | When `1`/`true`/`yes`, use CPU for ASR, diarization, and language ID even if CUDA is available; **Dockerfile.cpu** sets this by default |
 | `REDIS_URL` | `redis://redis:6379/0` | Redis connection for the transcription job queue |

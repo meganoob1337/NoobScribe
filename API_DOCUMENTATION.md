@@ -325,7 +325,10 @@ Check the health status of the API and the loaded model.
     "asr_backend": "nemo",
     "asr_model_display_name": "NVIDIA Canary 1B v2 (NeMo)",
     "available_local_models": ["canary-1b-v2", "canary-1b-v2-onnx-int8", "canary-1b-v2-onnx"],
-    "chunk_duration": 20.0,
+    "chunk_min_duration": 15.0,
+    "chunk_max_duration": 30.0,
+    "chunk_silence_db": -40.0,
+    "chunk_silence_min_duration": 0.3,
     "temp_dir": "/tmp/noobscribe",
     "chromadb_path": "./data/speakers",
     "model_path": null,
@@ -1332,7 +1335,10 @@ interface HealthResponse {
   gpu_info?: string;
   config: {
     model_id: string;
-    chunk_duration: number;
+    chunk_min_duration: number;
+    chunk_max_duration: number;
+    chunk_silence_db: number;
+    chunk_silence_min_duration: number;
     temp_dir: string;
     chromadb_path: string;
     speaker_similarity_threshold: number;
@@ -1358,8 +1364,8 @@ interface HealthResponse {
 ### Audio Processing
 
 - The API automatically converts uploaded audio files to WAV format
-- Long audio files are automatically split into chunks for processing
-- Chunk duration is configurable (default: 30 seconds)
+- Long audio files are split at speaking pauses into chunks of roughly 15–30 seconds (force-split at 30s if no pause is found)
+- Chunk bounds and silence detection are configurable via `CHUNK_MIN_DURATION`, `CHUNK_MAX_DURATION`, `CHUNK_SILENCE_DB`, and `CHUNK_SILENCE_MIN_DURATION`
 - Supported audio formats include: WAV, MP3, M4A, FLAC, OGG, and others supported by FFmpeg
 
 ### Speaker Database

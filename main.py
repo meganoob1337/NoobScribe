@@ -30,7 +30,7 @@ app = create_app()
 
 # For backwards compatibility - re-export the split_audio_into_chunks function
 # This is needed for the test_chunking.py to work without modification
-from audio import split_audio_into_chunks, convert_audio_to_wav
+from audio import AudioChunk, split_audio_into_chunks, convert_audio_to_wav
 from transcription import load_model, format_srt, format_vtt
 from models import WhisperSegment, TranscriptionResponse
 

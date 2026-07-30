@@ -30,7 +30,10 @@ DEBUG_MODE = os.environ.get("DEBUG", "0") == "1"
 DEFAULT_ASR_MODEL = "canary-1b-v2"
 DEFAULT_REMOTE_MODEL_ID = "whisper-1"
 DEFAULT_TEMPERATURE = 0.0
-DEFAULT_CHUNK_DURATION = 20  # seconds per chunk for long audio
+DEFAULT_CHUNK_MIN_DURATION = 15  # earliest pause cut after chunk start (seconds)
+DEFAULT_CHUNK_MAX_DURATION = 30  # latest cut / force-split (seconds)
+DEFAULT_CHUNK_SILENCE_DB = -40.0  # ffmpeg silencedetect noise threshold
+DEFAULT_CHUNK_SILENCE_MIN_DURATION = 0.3  # min pause length to count as a cut (seconds)
 
 # Hugging Face configuration
 HF_TOKEN = os.environ.get("HUGGINGFACE_ACCESS_TOKEN")
@@ -78,7 +81,18 @@ class Config:
 
         # Model settings
         self.temperature = float(os.environ.get("TEMPERATURE", DEFAULT_TEMPERATURE))
-        self.chunk_duration = int(os.environ.get("CHUNK_DURATION", DEFAULT_CHUNK_DURATION))
+        self.chunk_min_duration = float(
+            os.environ.get("CHUNK_MIN_DURATION", DEFAULT_CHUNK_MIN_DURATION)
+        )
+        self.chunk_max_duration = float(
+            os.environ.get("CHUNK_MAX_DURATION", DEFAULT_CHUNK_MAX_DURATION)
+        )
+        self.chunk_silence_db = float(
+            os.environ.get("CHUNK_SILENCE_DB", DEFAULT_CHUNK_SILENCE_DB)
+        )
+        self.chunk_silence_min_duration = float(
+            os.environ.get("CHUNK_SILENCE_MIN_DURATION", DEFAULT_CHUNK_SILENCE_MIN_DURATION)
+        )
 
         # Diarization settings
         self.hf_token = HF_TOKEN
@@ -197,7 +211,10 @@ class Config:
             "force_cpu": self.force_cpu,
             "model_id": self.model_id,
             "temperature": self.temperature,
-            "chunk_duration": self.chunk_duration,
+            "chunk_min_duration": self.chunk_min_duration,
+            "chunk_max_duration": self.chunk_max_duration,
+            "chunk_silence_db": self.chunk_silence_db,
+            "chunk_silence_min_duration": self.chunk_silence_min_duration,
             "enable_diarization": self.enable_diarization,
             "include_diarization_in_text": self.include_diarization_in_text,
             "has_hf_token": self.hf_token is not None,

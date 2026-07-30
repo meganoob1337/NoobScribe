@@ -129,7 +129,10 @@ Pinned dependencies for the **CPU** image are in **`requirements.lock.txt`** ([`
 | `MODEL_PATH` | Local NeMo `.nemo` or ONNX directory when the selected registry entry allows override |
 | `DIARIZATION_MODEL_PATH` | Local pyannote pipeline directory |
 | `TEMPERATURE` | Sampling temperature |
-| `CHUNK_DURATION` | Chunk length in seconds |
+| `CHUNK_MIN_DURATION` | Earliest pause cut after a chunk starts (seconds; default 15) |
+| `CHUNK_MAX_DURATION` | Latest cut / force-split length (seconds; default 30) |
+| `CHUNK_SILENCE_DB` | Silence detection noise threshold in dB (default -40) |
+| `CHUNK_SILENCE_MIN_DURATION` | Minimum pause length for a cut (seconds; default 0.3) |
 | `HUGGINGFACE_ACCESS_TOKEN` | HF token (diarization / downloads) |
 | `RECORDINGS_PATH`, `DATABASE_URL`, `CHROMADB_PATH` | Defaults match `./data` → `/app/data` in Compose |
 | `REDIS_URL` | Redis connection for the transcription queue (Compose: `redis://redis:6379/0`) |

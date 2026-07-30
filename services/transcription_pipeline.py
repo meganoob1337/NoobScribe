@@ -51,8 +51,13 @@ def run_transcription_pipeline(
     """
     effective_language = resolve_transcription_language(language, wav_file, config)
 
-    chunk_duration = config.chunk_duration
-    audio_chunks = split_audio_into_chunks(wav_file, chunk_duration=chunk_duration)
+    audio_chunks = split_audio_into_chunks(
+        wav_file,
+        min_duration=float(config.chunk_min_duration),
+        max_duration=float(config.chunk_max_duration),
+        silence_db=float(config.chunk_silence_db),
+        silence_min_duration=float(config.chunk_silence_min_duration),
+    )
     total_chunks = len(audio_chunks)
 
     if on_progress:
@@ -91,13 +96,13 @@ def run_transcription_pipeline(
     all_text: List[str] = []
     all_segments: List[WhisperSegment] = []
 
-    for i, chunk_path in enumerate(audio_chunks):
+    for i, chunk in enumerate(audio_chunks):
         if on_progress:
             on_progress("transcribing", i + 1, total_chunks)
-        logger.info("Processing chunk %s/%s", i + 1, total_chunks)
+        logger.info("Processing chunk %s/%s (start=%.2fs)", i + 1, total_chunks, chunk.start_sec)
         if getattr(config, "use_api", False):
             chunk_text, chunk_segments = transcribe_api_chunk(
-                chunk_path,
+                chunk.path,
                 config.get_transcription_model_name(),
                 config,
                 language=effective_language,
@@ -105,15 +110,14 @@ def run_transcription_pipeline(
         else:
             chunk_text, chunk_segments = transcribe_audio_chunk(
                 asr_model,
-                chunk_path,
+                chunk.path,
                 language=effective_language,
                 word_timestamps=word_timestamps,
             )
-        if i > 0:
-            offset = i * chunk_duration
+        if chunk.start_sec > 0:
             for segment in chunk_segments:
-                segment.start += offset
-                segment.end += offset
+                segment.start += chunk.start_sec
+                segment.end += chunk.start_sec
         all_text.append(chunk_text)
         all_segments.extend(chunk_segments)
 
@@ -207,7 +211,9 @@ def run_transcription_pipeline(
         speakers=speakers_list if include_speakers else None,
     )
 
-    paths_to_cleanup = [p for p in audio_chunks if p != wav_file and os.path.exists(p)]
+    paths_to_cleanup = [
+        c.path for c in audio_chunks if c.path != wav_file and os.path.exists(c.path)
+    ]
     return PipelineRunResult(
         response=response,
         paths_to_cleanup=paths_to_cleanup,
