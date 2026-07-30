@@ -895,6 +895,8 @@ function noobScribeApp() {
       const stage = job.progress_stage || "running";
       const cur = job.progress_current;
       const total = job.progress_total;
+      if (stage === "loading_diarization_model") return "Loading diarization model…";
+      if (stage === "loading_transcription_model") return "Loading transcription model…";
       if (stage === "diarization") return "Running diarization…";
       if (stage === "preparing") return "Preparing audio…";
       if (stage === "transcribing" && cur != null && total != null) {

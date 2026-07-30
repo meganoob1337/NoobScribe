@@ -197,6 +197,38 @@ SKIP_MODEL_LOAD=1 ./run.sh --port 8000
 ./venv/bin/python tests/test_api.py --file /path/to/audio.wav --url http://localhost:8000
 ```
 
+### End-to-end performance evaluation
+
+Use [`tests/evaluate_transcription_performance.py`](tests/evaluate_transcription_performance.py) to benchmark
+transcription + diarization runtime and worker VRAM peak usage.
+
+1. Edit `RECORDING_IDS` at the top of the script with existing recording UUIDs.
+2. Ensure your API and worker containers are running.
+3. Run:
+
+```bash
+./venv/bin/python tests/evaluate_transcription_performance.py
+```
+
+By default the script targets `NOOBSCRIBE_HOST` from your environment:
+- if `NOOBSCRIBE_HOST` includes a scheme, it is used as-is (`http://...` / `https://...`);
+- otherwise it uses `https://<NOOBSCRIBE_HOST>`;
+- if unset, it falls back to `http://localhost:8000`.
+
+Optional flags:
+- `--url <base_url>` to override automatic `NOOBSCRIBE_HOST` resolution.
+- `--worker-container <name>` to force a specific worker container.
+- `--vram-sample-interval <seconds>` to tune VRAM sampling cadence.
+- `--recording-ids <uuid1> <uuid2> ...` to override `RECORDING_IDS` without editing the script.
+
+The script prints both a readable per-recording summary and a final JSON summary containing:
+- input recording IDs,
+- per-recording trigger, processing, end-to-end, model-load (`loading_diarization_model` / `loading_transcription_model`), diarization, and transcription durations,
+- per-recording peak VRAM overall, during `diarization`, and during `transcribing`,
+- aggregate totals and global peak VRAM.
+
+Results are also written to `tests/performance_results/<timestamp>.json`.
+
 ## License
 
 NoobScribe project code is licensed under the **MIT License**. See **[LICENSE](LICENSE)**.

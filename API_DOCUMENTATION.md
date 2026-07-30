@@ -57,7 +57,12 @@ Transcription work runs in a **background worker** (Redis + [RQ](https://python-
 
 **Status values:** `queued`, `running`, `completed`, `failed`, `cancelled`.
 
-**Progress stages:** `preparing`, `diarization`, `transcribing`, `completed`, `cancelled`. During `transcribing`, `progress_current` / `progress_total` are the chunk index and chunk count.
+**Progress stages:** `preparing`, `loading_diarization_model`, `diarization`, `loading_transcription_model`, `transcribing`, `completed`, `cancelled`.
+
+- `loading_diarization_model` — pyannote pipeline is being loaded (before inference). Emitted when diarization is enabled for the job.
+- `diarization` — speaker diarization inference is running.
+- `loading_transcription_model` — local ASR is being loaded. Only emitted when `LOAD_MODELS_ON_DEMAND` is enabled (warm workers skip this stage).
+- `transcribing` — ASR chunks are running; `progress_current` / `progress_total` are the chunk index and chunk count.
 
 **TranscriptionJobResponse** also includes:
 

@@ -73,6 +73,9 @@ def run_transcription_pipeline(
         if not local_path and not hf_token:
             logger.warning("Diarization requested but no local diarization path or HuggingFace token")
         else:
+            if on_progress:
+                on_progress("loading_diarization_model", 0, 1)
+            logger.info("Loading diarization model")
             with diarizer_session(
                 access_token=hf_token if not local_path else None,
                 model_path=local_path,
@@ -106,6 +109,8 @@ def run_transcription_pipeline(
                 resolved = getattr(config, "resolved_asr_model", None)
                 if resolved is None:
                     raise RuntimeError("LOAD_MODELS_ON_DEMAND set but no resolved_asr_model configured")
+                if on_progress:
+                    on_progress("loading_transcription_model", 0, 1)
                 logger.info("Loading ASR model on demand for transcription")
                 active_asr = load_model(resolved)
                 loaded_on_demand = True
