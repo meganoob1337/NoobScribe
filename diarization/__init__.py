@@ -68,6 +68,7 @@ class Diarizer:
             if self.model_path:
                 logger.info("Loading diarization pipeline from local path: %s", self.model_path)
                 self.pipeline = Pipeline.from_pretrained(self.model_path)
+                self.pipeline.embedding_batch_size = 4
             else:
                 if not self.access_token:
                     logger.warning(
@@ -83,7 +84,7 @@ class Diarizer:
                     DEFAULT_DIARIZATION_MODEL,
                     token=self.access_token,
                 )
-
+                self.pipeline.embedding_batch_size = 4 # TODO: Remove this once https://github.com/pyannote/pyannote-audio/issues/1963 is fixed
             self.pipeline.to(torch.device(self.device))
             logger.info("Diarization pipeline initialized on %s", self.device)
 
