@@ -35,6 +35,7 @@ x-noobscribe-common: &noobscribe-common
     - DATABASE_URL=sqlite+aiosqlite:////app/data/noobscribe.db
     - REDIS_URL=redis://redis:6379/0
     - QUEUE_TRANSCRIPTION=${QUEUE_TRANSCRIPTION:-1}
+    - LOAD_MODELS_ON_DEMAND=${LOAD_MODELS_ON_DEMAND:-false}
   volumes:
     - ./huggingface:/root/.cache/huggingface
     - ./data:/app/data
@@ -135,6 +136,7 @@ services:
       - DATABASE_URL=sqlite+aiosqlite:////app/data/noobscribe.db
       - REDIS_URL=redis://redis:6379/0
       - QUEUE_TRANSCRIPTION=${QUEUE_TRANSCRIPTION:-1}
+      - LOAD_MODELS_ON_DEMAND=${LOAD_MODELS_ON_DEMAND:-false}
     networks:
       - default
       - traefik-global-proxy
@@ -171,6 +173,7 @@ services:
       - DATABASE_URL=sqlite+aiosqlite:////app/data/noobscribe.db
       - REDIS_URL=redis://redis:6379/0
       - QUEUE_TRANSCRIPTION=${QUEUE_TRANSCRIPTION:-1}
+      - LOAD_MODELS_ON_DEMAND=${LOAD_MODELS_ON_DEMAND:-false}
 
   noobscribe-worker:
     <<: *noobscribe-worker-common
@@ -199,6 +202,7 @@ services:
       - DATABASE_URL=sqlite+aiosqlite:////app/data/noobscribe.db
       - REDIS_URL=redis://redis:6379/0
       - QUEUE_TRANSCRIPTION=${QUEUE_TRANSCRIPTION:-1}
+      - LOAD_MODELS_ON_DEMAND=${LOAD_MODELS_ON_DEMAND:-false}
     deploy:
       resources:
         reservations:
@@ -254,6 +258,7 @@ services:
       - DATABASE_URL=sqlite+aiosqlite:////app/data/noobscribe.db
       - REDIS_URL=redis://redis:6379/0
       - QUEUE_TRANSCRIPTION=${QUEUE_TRANSCRIPTION:-1}
+      - LOAD_MODELS_ON_DEMAND=${LOAD_MODELS_ON_DEMAND:-false}
     deploy:
       resources:
         reservations:
@@ -297,6 +302,7 @@ services:
       - DATABASE_URL=sqlite+aiosqlite:////app/data/noobscribe.db
       - REDIS_URL=redis://redis:6379/0
       - QUEUE_TRANSCRIPTION=${QUEUE_TRANSCRIPTION:-1}
+      - LOAD_MODELS_ON_DEMAND=${LOAD_MODELS_ON_DEMAND:-false}
     depends_on:
       - redis
     ports:
@@ -333,6 +339,7 @@ services:
       - DATABASE_URL=sqlite+aiosqlite:////app/data/noobscribe.db
       - REDIS_URL=redis://redis:6379/0
       - QUEUE_TRANSCRIPTION=${QUEUE_TRANSCRIPTION:-1}
+      - LOAD_MODELS_ON_DEMAND=${LOAD_MODELS_ON_DEMAND:-false}
 
 networks:
   traefik-global-proxy:

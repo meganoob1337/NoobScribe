@@ -16,7 +16,7 @@ _resources_initialized = False
 
 
 def init_worker_resources() -> Tuple[Any, Optional[SpeakerDB]]:
-    """Load models once per worker process."""
+    """Load models once per worker process (unless LOAD_MODELS_ON_DEMAND)."""
     global _asr_model, _speaker_db, _resources_initialized
     if _resources_initialized:
         return _asr_model, _speaker_db
@@ -39,6 +39,12 @@ def init_worker_resources() -> Tuple[Any, Optional[SpeakerDB]]:
                 "Worker using remote STT API at %s (model=%s)",
                 cfg.stt_base_url,
                 cfg.model_id,
+            )
+        elif getattr(cfg, "load_models_on_demand", False):
+            _asr_model = None
+            logger.info(
+                "Worker ASR model deferred (LOAD_MODELS_ON_DEMAND=1); "
+                "model loads during transcription and unloads afterward"
             )
         else:
             _asr_model = load_model(cfg.resolved_asr_model)
@@ -66,6 +72,7 @@ def init_worker_resources() -> Tuple[Any, Optional[SpeakerDB]]:
 
 
 def get_worker_asr_model() -> Any:
+    """Return the warm ASR model, or None when USE_API / LOAD_MODELS_ON_DEMAND."""
     if not _resources_initialized:
         init_worker_resources()
     return _asr_model

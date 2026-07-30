@@ -170,6 +170,13 @@ class Config:
             "true",
             "yes",
         )
+        # When true: do not preload ASR at process start; load for transcription and unload after.
+        # Language ID and diarization already load/unload per use regardless of this flag.
+        self.load_models_on_demand = os.environ.get("LOAD_MODELS_ON_DEMAND", "").lower() in (
+            "1",
+            "true",
+            "yes",
+        )
 
         if self.use_api:
             logger.debug(
@@ -234,6 +241,7 @@ class Config:
             "redis_url": self.redis_url,
             "queue_enabled": self.queue_enabled,
             "skip_model_load": self.skip_model_load,
+            "load_models_on_demand": self.load_models_on_demand,
         }
         if self.use_api:
             payload["asr_model"] = None

@@ -138,6 +138,7 @@ Pinned dependencies for the **CPU** image are in **`requirements.lock.txt`** ([`
 | `REDIS_URL` | Redis connection for the transcription queue (Compose: `redis://redis:6379/0`) |
 | `QUEUE_TRANSCRIPTION` | `1` (default) enables async jobs; `0` makes enqueue endpoints return `503` |
 | `SKIP_MODEL_LOAD` | `1` on API containers — workers load NeMo / diarization models |
+| `LOAD_MODELS_ON_DEMAND` | When `1`/`true`/`yes`, workers (or sync API) load ASR only for transcription and unload afterward instead of keeping it warm |
 
 Set queue-related variables on **both** API and worker services when overriding Compose env.
 

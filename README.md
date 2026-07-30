@@ -177,6 +177,7 @@ SKIP_MODEL_LOAD=1 ./run.sh --port 8000
 | `REDIS_URL` | `redis://redis:6379/0` | Redis connection for the transcription job queue |
 | `QUEUE_TRANSCRIPTION` | `1` | When `0`, enqueue endpoints return `503` |
 | `SKIP_MODEL_LOAD` | unset (`1` in Docker API) | API skips ASR load; run `python -m workers.run` for transcription |
+| `LOAD_MODELS_ON_DEMAND` | unset (`false`) | When `1`/`true`/`yes`, do not preload the local ASR model at process start. The pipeline loads ASR after language ID / diarization and unloads it when the job finishes (saves idle VRAM; slower first inference). Language ID and diarization already load/unload per use. |
 
 **Local ASR models** are defined in [`config/asr_models.yaml`](config/asr_models.yaml). To add a model, add an entry there (backend, source, quantization). `GET /v1/models` lists configured keys in local mode.
 

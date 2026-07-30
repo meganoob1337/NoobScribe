@@ -153,6 +153,12 @@ def create_app() -> FastAPI:
                     "API skipping ASR model load (transcription handled by workers; queue_enabled=%s)",
                     config.queue_enabled,
                 )
+            elif config.load_models_on_demand:
+                asr_model = None
+                logger.info(
+                    "API skipping ASR model preload (LOAD_MODELS_ON_DEMAND=1); "
+                    "model loads during transcription"
+                )
             else:
                 asr_model = load_model(config.resolved_asr_model)
                 logger.info(
@@ -289,7 +295,15 @@ def create_app() -> FastAPI:
         return {
             "status": "ok",
             "version": "1.0.0",
-            "model_loaded": asr_model is not None or getattr(config, "use_api", False),
+            "model_loaded": (
+                asr_model is not None
+                or getattr(config, "use_api", False)
+                or (
+                    getattr(config, "load_models_on_demand", False)
+                    and not config.queue_enabled
+                    and not config.skip_model_load
+                )
+            ),
             "speaker_db_initialized": init_speaker_db(),
             "model_id": config.get_transcription_model_name(),
             "asr_model": getattr(config, "asr_model", None),

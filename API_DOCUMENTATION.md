@@ -345,7 +345,7 @@ Check the health status of the API and the loaded model.
 **Response Fields:**
 - `status` (string): Always "ok" if the API is running
 - `version` (string): API version
-- `model_loaded` (boolean): Whether transcription is ready: **true** if the local ASR model is loaded **or** if **`USE_API`** is enabled (remote STT; no local ASR weights). **false** only when local ASR failed to load and API mode is off.
+- `model_loaded` (boolean): Whether transcription is ready: **true** if the local ASR model is loaded, **`USE_API`** is enabled (remote STT; no local ASR weights), or **`LOAD_MODELS_ON_DEMAND`** is set on a sync API process (model loads per job). With the Docker queue setup (`SKIP_MODEL_LOAD` / workers), readiness is mainly indicated by `workers_registered`.
 - `speaker_db_initialized` (boolean): Whether the Chroma speaker embedding store is available. The health check attempts lazy initialization if startup failed; **false** means speaker CRUD, rematch, and nearest-embedding endpoints return **503** (see server logs and `CHROMADB_PATH`).
 - `model_id` (string): Active transcription model name — **`ASR_MODEL`** registry key in local mode; **`MODEL_ID`** in remote API mode
 - `asr_model` (string, optional): Local registry key when not in API mode; `null` when `USE_API=1`
@@ -357,7 +357,7 @@ Check the health status of the API and the loaded model.
 - `redis_ok` (boolean): Whether Redis accepts a ping at `REDIS_URL`
 - `workers_registered` (integer): RQ workers listening on the `transcription` queue
 - `queue_depth` (integer): Jobs waiting in the Redis transcription queue
-- `config` (object): Current server configuration (includes `force_cpu`, `use_api`, `stt_base_url`, `has_stt_api_key`)
+- `config` (object): Current server configuration (includes `force_cpu`, `use_api`, `stt_base_url`, `has_stt_api_key`, `load_models_on_demand`)
 
 #### Example Request
 
@@ -1139,6 +1139,7 @@ Other useful paths:
 | `REDIS_URL` | `redis://redis:6379/0` | Redis URL for the transcription job queue |
 | `QUEUE_TRANSCRIPTION` | `1` | Enable async job queue (`0` disables enqueue) |
 | `SKIP_MODEL_LOAD` | unset | When `1`, API process does not load NeMo (Docker API sets this; workers load models) |
+| `LOAD_MODELS_ON_DEMAND` | unset (`false`) | When `1` / `true` / `yes`, skip ASR preload at startup. The transcription pipeline loads the local ASR model after language ID / diarization and unloads it afterward. Language ID and diarization already load/unload per use. |
 
 ---
 

@@ -22,6 +22,21 @@ def _reset_worker_bootstrap():
     return wb
 
 
+def _local_cfg(**overrides):
+    cfg = MagicMock()
+    cfg.use_api = False
+    cfg.load_models_on_demand = False
+    cfg.model_path = None
+    cfg.asr_model = "canary-1b-v2"
+    cfg.resolved_asr_model = MagicMock()
+    cfg.resolved_asr_model.spec.backend = "nemo"
+    cfg.chromadb_path = "/tmp/noobscribe-test-speakers"
+    cfg.speaker_similarity_threshold = 0.7
+    for key, value in overrides.items():
+        setattr(cfg, key, value)
+    return cfg
+
+
 class TestWorkerBootstrapApiMode(unittest.TestCase):
     def setUp(self):
         _reset_worker_bootstrap()
@@ -35,12 +50,7 @@ class TestWorkerBootstrapApiMode(unittest.TestCase):
     def test_api_mode_skips_load_model(self, mock_load_model, mock_speaker_db, mock_get_config):
         import services.worker_bootstrap as wb
 
-        cfg = MagicMock()
-        cfg.use_api = True
-        cfg.stt_base_url = "https://api.example.com/v1"
-        cfg.model_id = "whisper-1"
-        cfg.chromadb_path = "/tmp/noobscribe-test-speakers"
-        cfg.speaker_similarity_threshold = 0.7
+        cfg = _local_cfg(use_api=True, stt_base_url="https://api.example.com/v1", model_id="whisper-1")
         mock_get_config.return_value = cfg
         mock_speaker_db.return_value = MagicMock()
 
@@ -57,12 +67,7 @@ class TestWorkerBootstrapApiMode(unittest.TestCase):
     def test_get_worker_asr_model_initializes_in_api_mode(self, mock_load_model, mock_speaker_db, mock_get_config):
         import services.worker_bootstrap as wb
 
-        cfg = MagicMock()
-        cfg.use_api = True
-        cfg.stt_base_url = "https://api.example.com/v1"
-        cfg.model_id = "whisper-1"
-        cfg.chromadb_path = "/tmp/noobscribe-test-speakers"
-        cfg.speaker_similarity_threshold = 0.7
+        cfg = _local_cfg(use_api=True, stt_base_url="https://api.example.com/v1", model_id="whisper-1")
         mock_get_config.return_value = cfg
         mock_speaker_db.return_value = MagicMock()
 
@@ -71,6 +76,23 @@ class TestWorkerBootstrapApiMode(unittest.TestCase):
         self.assertIsNone(model)
         mock_load_model.assert_not_called()
         self.assertTrue(wb._resources_initialized)
+
+    @patch("services.worker_bootstrap.get_config")
+    @patch("services.worker_bootstrap.SpeakerDB")
+    @patch("services.worker_bootstrap.load_model")
+    def test_on_demand_skips_preload(self, mock_load_model, mock_speaker_db, mock_get_config):
+        import services.worker_bootstrap as wb
+
+        cfg = _local_cfg(load_models_on_demand=True)
+        mock_get_config.return_value = cfg
+        mock_speaker_db.return_value = MagicMock()
+
+        asr_model, speaker_db = wb.init_worker_resources()
+
+        self.assertIsNone(asr_model)
+        mock_load_model.assert_not_called()
+        self.assertIsNotNone(speaker_db)
+        self.assertIsNone(wb.get_worker_asr_model())
 
 
 if __name__ == "__main__":

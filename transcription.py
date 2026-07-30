@@ -1,6 +1,7 @@
 # Originally from https://github.com/jfgonsalves/parakeet-diarized (commit 6abadfd)
 # Copyright (c) jfgonsalves - MIT License
 # Modified by meganoob1337 for the NoobScribe project
+import gc
 import logging
 from typing import Any, List, Optional, Tuple
 
@@ -54,6 +55,29 @@ def load_model(resolved: ResolvedAsrModel) -> LoadedAsrModel:
     except Exception as e:
         logger.error("Error loading ASR model %s: %s", spec.id, e)
         raise
+
+
+def unload_model(loaded: Optional[LoadedAsrModel]) -> None:
+    """Release a loaded ASR model and free GPU memory when possible."""
+    if loaded is None:
+        return
+    model = getattr(loaded, "model", None)
+    if model is not None:
+        try:
+            if use_cuda() and hasattr(model, "cpu"):
+                model.cpu()
+        except Exception as e:
+            logger.debug("Could not move ASR model to CPU before unload: %s", e)
+        try:
+            del model
+        except Exception:
+            pass
+    loaded.model = None
+    del loaded
+    gc.collect()
+    if use_cuda():
+        torch.cuda.empty_cache()
+    logger.info("ASR model unloaded")
 
 
 def _format_timestamp(seconds: float, always_include_hours: bool = False,
