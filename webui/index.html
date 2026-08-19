@@ -480,6 +480,7 @@
                 <button type="button" @click="runGlobalRematch()" :disabled="rematchBusy"
                   class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-white border border-slate-600 disabled:opacity-50"
                   x-text="rematchBusy ? 'Re-matching…' : 'Re-match transcripts'"></button>
+                <span class="text-xs text-slate-500" x-text="speakerMatchModeLabel()"></span>
                 <span x-show="rematchMessage" class="text-xs text-slate-500" x-text="rematchMessage"></span>
               </div>
             </div>
@@ -504,7 +505,7 @@
                         title="Nearest stored embeddings"
                         :aria-expanded="isSpeakerNeighborsOpen('transcript', s.id)">≈</button>
                       <div x-show="isSpeakerNeighborsOpen('transcript', s.id)" x-cloak
-                        class="absolute right-0 top-full z-20 mt-1 w-72 rounded-lg border border-slate-700 bg-slate-950 shadow-xl p-2 text-xs space-y-1"
+                        class="absolute right-0 top-full z-20 mt-1 w-80 rounded-lg border border-slate-700 bg-slate-950 shadow-xl p-2 text-xs space-y-1"
                         @click.stop>
                         <p class="text-slate-500" x-show="speakerNeighborsLoadingKey === speakerNeighborsKey('transcript', s.id)">Loading…</p>
                         <div x-show="speakerNeighborsLoadingKey !== speakerNeighborsKey('transcript', s.id)">
@@ -512,10 +513,17 @@
                           <p x-show="neighborsCacheForSpeaker('transcript', s.id) && neighborsCacheForSpeaker('transcript', s.id).error" class="text-red-400" x-text="neighborsCacheForSpeaker('transcript', s.id).error"></p>
                           <p x-show="!(neighborsCacheForSpeaker('transcript', s.id) && neighborsCacheForSpeaker('transcript', s.id).error) && neighborsForSpeaker('transcript', s.id).length === 0" class="text-slate-500">No stored embeddings yet.</p>
                           <template x-for="(n, ni) in neighborsForSpeaker('transcript', s.id)" :key="'tr-n-' + s.id + '-' + ni">
-                            <div class="flex flex-wrap items-baseline gap-x-2 py-0.5" :class="n.meets_threshold ? 'text-green-400' : 'text-slate-400'">
-                              <span x-text="n.display_name + ' · emb ' + n.embedding_index"></span>
-                              <span x-text="formatMatchSimilarity(n.similarity)"></span>
-                              <span class="text-[10px] uppercase tracking-wide" x-text="n.meets_threshold ? 'matched' : 'below'"></span>
+                            <div class="py-0.5">
+                              <div class="flex flex-wrap items-baseline gap-x-2" :class="n.meets_threshold ? 'text-green-400' : 'text-slate-400'">
+                                <span x-text="n.display_name + ' · emb ' + n.embedding_index"></span>
+                                <span x-text="formatMatchSimilarity(n.similarity)"></span>
+                                <span class="text-[10px] uppercase tracking-wide" x-text="n.meets_threshold ? 'matched' : 'below'"></span>
+                              </div>
+                              <div class="flex flex-wrap items-baseline gap-x-2" :class="n.centroid_meets_threshold ? 'text-green-400/80' : 'text-slate-500'">
+                                <span>centroid</span>
+                                <span x-text="n.centroid_similarity != null ? formatMatchSimilarity(n.centroid_similarity) : '—'"></span>
+                                <span class="text-[10px] uppercase tracking-wide" x-text="n.centroid_meets_threshold ? 'matched' : 'below'"></span>
+                              </div>
                             </div>
                           </template>
                         </div>
@@ -590,6 +598,7 @@
           <button type="button" @click="runGlobalRematch()" :disabled="rematchBusy"
             class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-white border border-slate-600 disabled:opacity-50"
             x-text="rematchBusy ? 'Re-matching…' : 'Re-match transcripts'"></button>
+          <span class="text-xs text-slate-500" x-text="speakerMatchModeLabel()"></span>
           <span x-show="rematchMessage" class="text-xs text-slate-500" x-text="rematchMessage"></span>
         </div>
       </div>
@@ -682,7 +691,7 @@
                             title="Nearest stored embeddings"
                             :aria-expanded="isSpeakerNeighborsOpen('extract', s.id)">≈</button>
                           <div x-show="isSpeakerNeighborsOpen('extract', s.id)" x-cloak
-                            class="absolute left-0 top-full z-20 mt-1 w-72 rounded-lg border border-slate-700 bg-slate-950 shadow-xl p-2 text-xs space-y-1"
+                            class="absolute left-0 top-full z-20 mt-1 w-80 rounded-lg border border-slate-700 bg-slate-950 shadow-xl p-2 text-xs space-y-1"
                             @click.stop>
                             <p class="text-slate-500" x-show="speakerNeighborsLoadingKey === speakerNeighborsKey('extract', s.id)">Loading…</p>
                             <div x-show="speakerNeighborsLoadingKey !== speakerNeighborsKey('extract', s.id)">
@@ -690,10 +699,17 @@
                               <p x-show="neighborsCacheForSpeaker('extract', s.id) && neighborsCacheForSpeaker('extract', s.id).error" class="text-red-400" x-text="neighborsCacheForSpeaker('extract', s.id).error"></p>
                               <p x-show="!(neighborsCacheForSpeaker('extract', s.id) && neighborsCacheForSpeaker('extract', s.id).error) && neighborsForSpeaker('extract', s.id).length === 0" class="text-slate-500">No stored embeddings yet.</p>
                               <template x-for="(n, ni) in neighborsForSpeaker('extract', s.id)" :key="'ex-n-' + s.id + '-' + ni">
-                                <div class="flex flex-wrap items-baseline gap-x-2 py-0.5" :class="n.meets_threshold ? 'text-green-400' : 'text-slate-400'">
-                                  <span x-text="n.display_name + ' · emb ' + n.embedding_index"></span>
-                                  <span x-text="formatMatchSimilarity(n.similarity)"></span>
-                                  <span class="text-[10px] uppercase tracking-wide" x-text="n.meets_threshold ? 'matched' : 'below'"></span>
+                                <div class="py-0.5">
+                                  <div class="flex flex-wrap items-baseline gap-x-2" :class="n.meets_threshold ? 'text-green-400' : 'text-slate-400'">
+                                    <span x-text="n.display_name + ' · emb ' + n.embedding_index"></span>
+                                    <span x-text="formatMatchSimilarity(n.similarity)"></span>
+                                    <span class="text-[10px] uppercase tracking-wide" x-text="n.meets_threshold ? 'matched' : 'below'"></span>
+                                  </div>
+                                  <div class="flex flex-wrap items-baseline gap-x-2" :class="n.centroid_meets_threshold ? 'text-green-400/80' : 'text-slate-500'">
+                                    <span>centroid</span>
+                                    <span x-text="n.centroid_similarity != null ? formatMatchSimilarity(n.centroid_similarity) : '—'"></span>
+                                    <span class="text-[10px] uppercase tracking-wide" x-text="n.centroid_meets_threshold ? 'matched' : 'below'"></span>
+                                  </div>
                                 </div>
                               </template>
                             </div>

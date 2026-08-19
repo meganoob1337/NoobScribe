@@ -1568,6 +1568,18 @@ function noobScribeApp() {
       return Math.round(Number(sim) * 100) + "%";
     },
 
+    speakerMatchMode() {
+      const cfg = this.health && this.health.config;
+      const mode = cfg && cfg.speaker_match_mode;
+      return mode === "centroid" ? "centroid" : "nearest";
+    },
+
+    speakerMatchModeLabel() {
+      return this.speakerMatchMode() === "centroid"
+        ? "Match: centroid"
+        : "Match: nearest embedding";
+    },
+
     formatSimilarityThreshold(threshold) {
       if (threshold == null || Number.isNaN(Number(threshold))) return "";
       return Math.round(Number(threshold) * 100) + "%";

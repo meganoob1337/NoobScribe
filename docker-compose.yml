@@ -36,6 +36,7 @@ x-noobscribe-common: &noobscribe-common
     - REDIS_URL=redis://redis:6379/0
     - QUEUE_TRANSCRIPTION=${QUEUE_TRANSCRIPTION:-1}
     - LOAD_MODELS_ON_DEMAND=${LOAD_MODELS_ON_DEMAND:-false}
+    - SPEAKER_MATCH_MODE=${SPEAKER_MATCH_MODE:-nearest}
   volumes:
     - ./huggingface:/root/.cache/huggingface
     - ./data:/app/data
@@ -137,6 +138,7 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - QUEUE_TRANSCRIPTION=${QUEUE_TRANSCRIPTION:-1}
       - LOAD_MODELS_ON_DEMAND=${LOAD_MODELS_ON_DEMAND:-false}
+      - SPEAKER_MATCH_MODE=${SPEAKER_MATCH_MODE:-nearest}
     networks:
       - default
       - traefik-global-proxy
@@ -174,6 +176,7 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - QUEUE_TRANSCRIPTION=${QUEUE_TRANSCRIPTION:-1}
       - LOAD_MODELS_ON_DEMAND=${LOAD_MODELS_ON_DEMAND:-false}
+      - SPEAKER_MATCH_MODE=${SPEAKER_MATCH_MODE:-nearest}
 
   noobscribe-worker:
     <<: *noobscribe-worker-common
@@ -203,6 +206,7 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - QUEUE_TRANSCRIPTION=${QUEUE_TRANSCRIPTION:-1}
       - LOAD_MODELS_ON_DEMAND=${LOAD_MODELS_ON_DEMAND:-false}
+      - SPEAKER_MATCH_MODE=${SPEAKER_MATCH_MODE:-nearest}
     deploy:
       resources:
         reservations:
@@ -259,6 +263,7 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - QUEUE_TRANSCRIPTION=${QUEUE_TRANSCRIPTION:-1}
       - LOAD_MODELS_ON_DEMAND=${LOAD_MODELS_ON_DEMAND:-false}
+      - SPEAKER_MATCH_MODE=${SPEAKER_MATCH_MODE:-nearest}
     deploy:
       resources:
         reservations:
@@ -303,6 +308,7 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - QUEUE_TRANSCRIPTION=${QUEUE_TRANSCRIPTION:-1}
       - LOAD_MODELS_ON_DEMAND=${LOAD_MODELS_ON_DEMAND:-false}
+      - SPEAKER_MATCH_MODE=${SPEAKER_MATCH_MODE:-nearest}
     depends_on:
       - redis
     ports:
@@ -340,6 +346,7 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - QUEUE_TRANSCRIPTION=${QUEUE_TRANSCRIPTION:-1}
       - LOAD_MODELS_ON_DEMAND=${LOAD_MODELS_ON_DEMAND:-false}
+      - SPEAKER_MATCH_MODE=${SPEAKER_MATCH_MODE:-nearest}
 
 networks:
   traefik-global-proxy:

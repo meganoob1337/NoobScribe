@@ -341,6 +341,7 @@ Check the health status of the API and the loaded model.
     "recordings_path": "./data/recordings",
     "database_url": "sqlite+aiosqlite:///./data/noobscribe.db",
     "speaker_similarity_threshold": 0.7,
+    "speaker_match_mode": "nearest",
     "include_diarization_in_text": true,
     "force_cpu": false
   }
@@ -362,7 +363,7 @@ Check the health status of the API and the loaded model.
 - `redis_ok` (boolean): Whether Redis accepts a ping at `REDIS_URL`
 - `workers_registered` (integer): RQ workers listening on the `transcription` queue
 - `queue_depth` (integer): Jobs waiting in the Redis transcription queue
-- `config` (object): Current server configuration (includes `force_cpu`, `use_api`, `stt_base_url`, `has_stt_api_key`, `load_models_on_demand`)
+- `config` (object): Current server configuration (includes `force_cpu`, `use_api`, `stt_base_url`, `has_stt_api_key`, `load_models_on_demand`, `speaker_match_mode`)
 
 #### Example Request
 
@@ -505,7 +506,7 @@ print(response.json())
 
 ### Re-match stored transcriptions
 
-Re-run speaker matching for every stored transcription that has diarization `speakers` JSON. Updates persisted `display_name`, `matched`, and `match_similarity` on each speaker row with an `embedding` (same logic as the side effect after `POST` / `PUT` / `DELETE` on `/v1/speakers`).
+Re-run speaker matching for every stored transcription that has diarization `speakers` JSON. Updates persisted `display_name`, `matched`, and `match_similarity` on each speaker row with an `embedding` (same logic as the side effect after `POST` / `PUT` / `DELETE` on `/v1/speakers`). Scoring follows `SPEAKER_MATCH_MODE` (`nearest` or `centroid`) and `SPEAKER_SIMILARITY_THRESHOLD`. After changing `SPEAKER_MATCH_MODE`, restart the API and worker, then call this endpoint so stored names and scores match the new scorer.
 
 **Endpoint:** `POST /v1/speakers/rematch`
 
@@ -532,7 +533,7 @@ Re-run speaker matching for every stored transcription that has diarization `spe
 
 ### Nearest stored embeddings
 
-Return the nearest stored speaker **embeddings** (individual Chroma rows) to a query vector, regardless of whether they meet `SPEAKER_SIMILARITY_THRESHOLD`.
+Return the nearest stored speaker **embeddings** (individual Chroma rows) to a query vector, regardless of whether they meet `SPEAKER_SIMILARITY_THRESHOLD`. Each hit also includes that speaker’s **centroid** cosine against the same query (for comparison with `SPEAKER_MATCH_MODE=centroid`). Identity matching itself still uses `SPEAKER_MATCH_MODE`.
 
 **Endpoint:** `POST /v1/speakers/nearest-embeddings`
 
@@ -562,7 +563,9 @@ Return the nearest stored speaker **embeddings** (individual Chroma rows) to a q
       "display_name": "John Doe",
       "embedding_index": 0,
       "similarity": 0.9124,
-      "meets_threshold": true
+      "meets_threshold": true,
+      "centroid_similarity": 0.8412,
+      "centroid_meets_threshold": true
     }
   ]
 }
@@ -574,8 +577,10 @@ Return the nearest stored speaker **embeddings** (individual Chroma rows) to a q
   - `speaker_id` (string): Stored speaker UUID
   - `display_name` (string): Enrolled speaker name
   - `embedding_index` (integer): Which enrollment embedding matched
-  - `similarity` (float): Cosine similarity (0–1)
+  - `similarity` (float): Cosine similarity of this enrollment (0–1)
   - `meets_threshold` (boolean): Whether `similarity >= threshold`
+  - `centroid_similarity` (float, optional): Cosine of the query vs that speaker’s enrollment centroid
+  - `centroid_meets_threshold` (boolean): Whether `centroid_similarity >= threshold`
 
 #### Status Codes
 
@@ -635,7 +640,7 @@ Create a new speaker with a display name and initial embedding.
 - `display_name` (string, required): Human-readable name for the speaker
 - `embedding` (array[float], required): Speaker embedding vector (typically 512 or 1024 dimensions)
 
-**Side effect:** After a successful create, the server **re-matches** every stored recording transcription that has a `speakers` array: for each diarized row with an `embedding`, it runs the same similarity check as live transcription (`SPEAKER_SIMILARITY_THRESHOLD`) against the Chroma speaker index and **updates persisted** `display_name`, `matched`, and `match_similarity` in SQLite. No extra request fields are required. This can add latency when many transcripts exist (one vector query per diarized speaker row).
+**Side effect:** After a successful create, the server **re-matches** every stored recording transcription that has a `speakers` array: for each diarized row with an `embedding`, it runs the same similarity check as live transcription (`SPEAKER_MATCH_MODE` and `SPEAKER_SIMILARITY_THRESHOLD`) against the Chroma speaker index and **updates persisted** `display_name`, `matched`, and `match_similarity` in SQLite. No extra request fields are required. This can add latency when many transcripts exist.
 
 #### Response Schema
 
@@ -1106,7 +1111,7 @@ Re-enqueues `queued` jobs older than `stale_seconds` when the linked RQ job is m
 
 ## Web UI
 
-A minimal SPA is served at **`/ui`** (same host as the API). Open `/ui` in a browser to upload recordings, **record in the browser** (mix window/tab or screen capture audio with the microphone, then upload as WebM), run transcription/diarization, inspect segments, save speaker embeddings to `/v1/speakers`, and manage stored speakers. On the **transcript viewer**, diarized **Speakers** use expandable accordion rows (segment count, matched similarity, **≈ nearest** popover for top stored embedding hits vs threshold, per-speaker segment snippets with audio play) and a **Re-match transcripts** control (`POST /v1/speakers/rematch`). On **Speakers**, **From audio snippet** uploads or records a short clip, calls **`POST /v1/speakers/extract-from-audio`** (hidden stored recording + diarization), then lets you **Save as…** for each detected speaker like the transcript view. The **Speakers** page header also offers **Re-match transcripts** and uses expandable rows: each speaker lists **enrollments** (embedding index), matching **transcriptions** with an **Audio snippet** control (loads `GET /v1/audio/snippet` only when clicked), and **Delete embedding** per enrollment. Saving a speaker triggers a **global re-match** of stored transcript diarization metadata so existing transcripts can show updated names and similarity without re-transcribing.
+A minimal SPA is served at **`/ui`** (same host as the API). Open `/ui` in a browser to upload recordings, **record in the browser** (mix window/tab or screen capture audio with the microphone, then upload as WebM), run transcription/diarization, inspect segments, save speaker embeddings to `/v1/speakers`, and manage stored speakers. On the **transcript viewer**, diarized **Speakers** use expandable accordion rows (segment count, matched similarity, **≈ nearest** popover for top stored embedding hits plus centroid scores vs threshold, per-speaker segment snippets with audio play) and a **Re-match transcripts** control (`POST /v1/speakers/rematch`) with the active `SPEAKER_MATCH_MODE` label. On **Speakers**, **From audio snippet** uploads or records a short clip, calls **`POST /v1/speakers/extract-from-audio`** (hidden stored recording + diarization), then lets you **Save as…** for each detected speaker like the transcript view. The **Speakers** page header also offers **Re-match transcripts** (with match-mode label) and uses expandable rows: each speaker lists **enrollments** (embedding index), matching **transcriptions** with an **Audio snippet** control (loads `GET /v1/audio/snippet` only when clicked), and **Delete embedding** per enrollment. Saving a speaker triggers a **global re-match** of stored transcript diarization metadata so existing transcripts can show updated names and similarity without re-transcribing.
 
 ---
 
@@ -1131,6 +1136,8 @@ Other useful paths:
 | `RECORDINGS_PATH` | `./data/recordings` | Stored upload files |
 | `DATABASE_URL` | `sqlite+aiosqlite:///./data/noobscribe.db` | Async SQLite URL for recordings metadata |
 | `CHROMADB_PATH` | `./data/speakers` | Speaker embedding store |
+| `SPEAKER_SIMILARITY_THRESHOLD` | `0.7` | Cosine similarity required to treat a diarized speaker as matched |
+| `SPEAKER_MATCH_MODE` | `nearest` | `nearest` (best enrollment cosine) or `centroid` (cosine vs mean of enrollments). Restart API and worker after changing, then rematch transcripts. |
 | `LANGUAGE_ID_MODEL_ID` | `speechbrain/lang-id-voxlingua107-ecapa` | Hugging Face model id for spoken language ID when `language` is omitted |
 | `LANGUAGE_ID_SAVEDIR` | `{TEMP_DIR}/speechbrain_lang_id` | Download/cache directory for the language-ID model |
 | `LANGUAGE_ID_MAX_AUDIO_SECONDS` | `30` | Seconds per identification segment (start, middle, 75%); majority vote picks the final language |
@@ -1296,6 +1303,8 @@ interface SpeakerNearestMatch {
   embedding_index: number;
   similarity: number;
   meets_threshold: boolean;
+  centroid_similarity?: number;
+  centroid_meets_threshold: boolean;
 }
 ```
 
@@ -1348,6 +1357,7 @@ interface HealthResponse {
     temp_dir: string;
     chromadb_path: string;
     speaker_similarity_threshold: number;
+    speaker_match_mode: "nearest" | "centroid";
     include_diarization_in_text: boolean;
   };
 }
@@ -1377,9 +1387,10 @@ interface HealthResponse {
 ### Speaker Database
 
 - The speaker database uses ChromaDB for storing and matching speaker embeddings
-- Similarity matching uses cosine similarity
-- Default similarity threshold is 0.7 (configurable)
-- Multiple embeddings per speaker improve matching accuracy
+- Identity matching uses cosine similarity, either against the **nearest enrollment** (`SPEAKER_MATCH_MODE=nearest`, default) or against each speaker’s **centroid** (L2-normalized mean of enrollments, `SPEAKER_MATCH_MODE=centroid`)
+- Default similarity threshold is 0.7 (configurable via `SPEAKER_SIMILARITY_THRESHOLD`)
+- Multiple embeddings per speaker improve matching; centroid mode is more stable when enrollments vary, nearest mode can still match if any one enrollment is close
+- After changing `SPEAKER_MATCH_MODE`, restart API and worker, then rematch stored transcripts
 
 ### Compatibility
 

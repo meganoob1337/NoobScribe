@@ -9,6 +9,40 @@ from chromadb.config import Settings
 
 logger = logging.getLogger(__name__)
 
+VALID_MATCH_MODES = frozenset({"nearest", "centroid"})
+
+
+def embedding_cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
+    """Cosine similarity in [-1, 1]; returns -1.0 if vectors are invalid or length-mismatched."""
+    a = np.asarray(a, dtype=np.float32).ravel()
+    b = np.asarray(b, dtype=np.float32).ravel()
+    if a.size == 0 or b.size == 0 or a.size != b.size:
+        return -1.0
+    na = float(np.linalg.norm(a))
+    nb = float(np.linalg.norm(b))
+    if na == 0.0 or nb == 0.0:
+        return -1.0
+    return float(np.dot(a, b) / (na * nb))
+
+
+def speaker_centroid(embeddings: List[np.ndarray]) -> Optional[np.ndarray]:
+    """L2-normalize each vector, mean, then L2-normalize the mean. None if empty/degenerate."""
+    unit: List[np.ndarray] = []
+    for raw in embeddings:
+        v = np.asarray(raw, dtype=np.float32).ravel()
+        n = float(np.linalg.norm(v))
+        if n == 0.0:
+            continue
+        unit.append(v / n)
+    if not unit:
+        return None
+    mean = np.mean(np.stack(unit, axis=0), axis=0)
+    mn = float(np.linalg.norm(mean))
+    if mn == 0.0:
+        return mean.astype(np.float32)
+    return (mean / mn).astype(np.float32)
+
+
 class Speaker:
     """Represents a speaker with metadata"""
     def __init__(self, id: str, display_name: str, created_at: str, embedding_count: int):
@@ -20,17 +54,30 @@ class Speaker:
 class SpeakerDB:
     """Database manager for speaker embeddings using ChromaDB"""
     
-    def __init__(self, db_path: str, similarity_threshold: float = 0.7):
+    def __init__(
+        self,
+        db_path: str,
+        similarity_threshold: float = 0.7,
+        match_mode: str = "nearest",
+    ):
         """
         Initialize the speaker database
         
         Args:
             db_path: Path to the ChromaDB database
             similarity_threshold: Cosine similarity threshold for matching (default: 0.7)
+            match_mode: ``nearest`` (best enrollment) or ``centroid`` (mean of enrollments)
         """
+        mode = (match_mode or "nearest").strip().lower() or "nearest"
+        if mode not in VALID_MATCH_MODES:
+            raise ValueError(
+                f"match_mode={match_mode!r} is invalid; use 'nearest' or 'centroid'"
+            )
         self.db_path = db_path
         self.similarity_threshold = similarity_threshold
-        
+        self.match_mode = mode
+        self._centroid_cache: Optional[Dict[str, Dict[str, Any]]] = None
+
         # Initialize ChromaDB client
         try:
             self.client = chromadb.PersistentClient(
@@ -44,10 +91,65 @@ class SpeakerDB:
                 metadata={"hnsw:space": "cosine"}  # Use cosine similarity
             )
             
-            logger.info(f"Initialized speaker database at {db_path}")
+            logger.info(
+                "Initialized speaker database at %s (match_mode=%s)",
+                db_path,
+                self.match_mode,
+            )
         except Exception as e:
             logger.error(f"Failed to initialize ChromaDB: {str(e)}")
             raise
+
+    def _invalidate_centroid_cache(self) -> None:
+        self._centroid_cache = None
+
+    def _speaker_centroids(self) -> Dict[str, Dict[str, Any]]:
+        """Map speaker_id -> display_name, created_at, embedding_count, centroid."""
+        if self._centroid_cache is not None:
+            return self._centroid_cache
+
+        results = self.collection.get(include=["embeddings", "metadatas"])
+        ids = results.get("ids") or []
+        embeddings = results.get("embeddings")
+        metadatas = results.get("metadatas") or []
+        grouped: Dict[str, Dict[str, Any]] = {}
+        if embeddings is None or len(ids) == 0:
+            self._centroid_cache = {}
+            return self._centroid_cache
+
+        for i, _chroma_id in enumerate(ids):
+            meta = metadatas[i] if i < len(metadatas) else None
+            if not meta:
+                continue
+            speaker_id = str(meta.get("speaker_id", "") or "")
+            if not speaker_id:
+                continue
+            vec = embeddings[i]
+            if vec is None:
+                continue
+            bucket = grouped.setdefault(
+                speaker_id,
+                {
+                    "display_name": str(meta.get("display_name", "") or ""),
+                    "created_at": str(meta.get("created_at", "") or ""),
+                    "vectors": [],
+                },
+            )
+            bucket["vectors"].append(np.asarray(vec, dtype=np.float32))
+
+        cache: Dict[str, Dict[str, Any]] = {}
+        for speaker_id, info in grouped.items():
+            centroid = speaker_centroid(info["vectors"])
+            if centroid is None:
+                continue
+            cache[speaker_id] = {
+                "display_name": info["display_name"],
+                "created_at": info["created_at"],
+                "embedding_count": len(info["vectors"]),
+                "centroid": centroid,
+            }
+        self._centroid_cache = cache
+        return cache
     
     def create_speaker(self, display_name: str, embedding: np.ndarray) -> str:
         """
@@ -78,6 +180,7 @@ class SpeakerDB:
             }]
         )
         
+        self._invalidate_centroid_cache()
         logger.info(f"Created speaker {speaker_id} with display name '{display_name}'")
         return speaker_id
     
@@ -125,6 +228,7 @@ class SpeakerDB:
             }]
         )
         
+        self._invalidate_centroid_cache()
         logger.info(f"Added embedding {next_index} to speaker {speaker_id}")
         return True
     
@@ -135,8 +239,9 @@ class SpeakerDB:
         Query ChromaDB for the nearest stored embeddings regardless of threshold.
 
         Returns:
-            List of dicts with speaker_id, display_name, embedding_index, similarity
-            (best match first). Empty when the collection has no embeddings.
+            List of dicts with speaker_id, display_name, embedding_index, similarity,
+            centroid_similarity (best enrollment first). Empty when the collection
+            has no embeddings.
         """
         limit = max(1, min(int(limit), 10))
         embedding_list = embedding.tolist() if isinstance(embedding, np.ndarray) else embedding
@@ -177,34 +282,86 @@ class SpeakerDB:
                     "similarity": similarity,
                 }
             )
+        centroids = self._speaker_centroids()
+        query = np.asarray(embedding, dtype=np.float32)
+        for item in out:
+            info = centroids.get(item["speaker_id"])
+            if info and info.get("centroid") is not None:
+                item["centroid_similarity"] = round(
+                    embedding_cosine_similarity(query, info["centroid"]), 4
+                )
+            else:
+                item["centroid_similarity"] = None
         return out
+
+    def _speaker_from_id(
+        self, speaker_id: str, display_name_fallback: str = ""
+    ) -> Optional[Speaker]:
+        all_embeddings = self.collection.get(where={"speaker_id": speaker_id})
+        if not all_embeddings.get("ids"):
+            return None
+        first_meta = all_embeddings["metadatas"][0] if all_embeddings.get("metadatas") else {}
+        return Speaker(
+            id=speaker_id,
+            display_name=display_name_fallback or first_meta.get("display_name", ""),
+            created_at=str(first_meta.get("created_at", "")),
+            embedding_count=len(all_embeddings["ids"]),
+        )
+
+    def _query_best_centroid_match(
+        self, embedding: np.ndarray
+    ) -> Tuple[Optional[Speaker], float]:
+        centroids = self._speaker_centroids()
+        if not centroids:
+            return None, 0.0
+        query = np.asarray(embedding, dtype=np.float32)
+        best_id: Optional[str] = None
+        best_sim = -1.0
+        best_info: Optional[Dict[str, Any]] = None
+        for speaker_id, info in centroids.items():
+            centroid = info.get("centroid")
+            if centroid is None:
+                continue
+            sim = embedding_cosine_similarity(query, centroid)
+            if sim > best_sim:
+                best_sim = sim
+                best_id = speaker_id
+                best_info = info
+        if best_id is None or best_info is None:
+            return None, 0.0
+        return Speaker(
+            id=best_id,
+            display_name=str(best_info.get("display_name", "")),
+            created_at=str(best_info.get("created_at", "")),
+            embedding_count=int(best_info.get("embedding_count", 0)),
+        ), round(float(best_sim), 4)
 
     def query_best_match(self, embedding: np.ndarray) -> Tuple[Optional[Speaker], float]:
         """
-        Query ChromaDB for the best cosine match regardless of threshold.
+        Best identity match regardless of threshold.
+
+        ``nearest``: highest cosine against any stored enrollment (Chroma).
+        ``centroid``: highest cosine against each speaker's enrollment centroid.
 
         Returns:
             (Speaker, similarity) when a stored embedding exists; (None, 0.0) otherwise.
         """
+        if self.match_mode == "centroid":
+            return self._query_best_centroid_match(embedding)
+
         hits = self.query_nearest_embeddings(embedding, limit=1)
         if not hits:
             return None, 0.0
 
         hit = hits[0]
-        speaker_id = hit["speaker_id"]
-        all_embeddings = self.collection.get(where={"speaker_id": speaker_id})
-        first_meta = all_embeddings["metadatas"][0] if all_embeddings.get("metadatas") else {}
-
-        return Speaker(
-            id=speaker_id,
-            display_name=hit["display_name"] or first_meta.get("display_name", ""),
-            created_at=str(first_meta.get("created_at", "")),
-            embedding_count=len(all_embeddings["ids"]),
-        ), float(hit["similarity"])
+        speaker = self._speaker_from_id(hit["speaker_id"], hit["display_name"])
+        if speaker is None:
+            return None, 0.0
+        return speaker, float(hit["similarity"])
 
     def find_similar_speaker(self, embedding: np.ndarray, threshold: Optional[float] = None) -> Optional[Speaker]:
         """
-        Find a speaker with similar embedding using cosine similarity
+        Find a speaker with similar embedding using the configured match mode
         
         Args:
             embedding: NumPy array representing the speaker embedding to match
@@ -331,6 +488,7 @@ class SpeakerDB:
             where={"speaker_id": speaker_id}
         )
         
+        self._invalidate_centroid_cache()
         logger.info(f"Deleted speaker {speaker_id} with {len(existing['ids'])} embeddings")
         return True
 
@@ -396,5 +554,6 @@ class SpeakerDB:
         if chroma_id not in existing["ids"]:
             return False, "not_found"
         self.collection.delete(ids=[chroma_id])
+        self._invalidate_centroid_cache()
         logger.info("Deleted embedding %s for speaker %s", embedding_index, speaker_id)
         return True, None

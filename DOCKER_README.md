@@ -139,6 +139,7 @@ Pinned dependencies for the **CPU** image are in **`requirements.lock.txt`** ([`
 | `QUEUE_TRANSCRIPTION` | `1` (default) enables async jobs; `0` makes enqueue endpoints return `503` |
 | `SKIP_MODEL_LOAD` | `1` on API containers — workers load NeMo / diarization models |
 | `LOAD_MODELS_ON_DEMAND` | When `1`/`true`/`yes`, workers (or sync API) load ASR only for transcription and unload afterward instead of keeping it warm |
+| `SPEAKER_MATCH_MODE` | `nearest` (default) or `centroid`. Set on **both** API and worker. After changing, restart both then rematch transcripts. |
 
 Set queue-related variables on **both** API and worker services when overriding Compose env.
 

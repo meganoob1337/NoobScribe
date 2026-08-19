@@ -75,6 +75,7 @@ def init_speaker_db() -> bool:
         speaker_db = SpeakerDB(
             db_path=config.chromadb_path,
             similarity_threshold=config.speaker_similarity_threshold,
+            match_mode=config.speaker_match_mode,
         )
         _speaker_db_init_error = None
         logger.info("Speaker database initialized at %s", config.chromadb_path)
@@ -447,18 +448,28 @@ def create_app() -> FastAPI:
         threshold = config.speaker_similarity_threshold
         try:
             hits = db.query_nearest_embeddings(emb, limit=body.limit)
-            return SpeakerNearestResponse(
-                threshold=threshold,
-                data=[
+            data = []
+            for h in hits:
+                centroid_sim = h.get("centroid_similarity")
+                centroid_sim_f = (
+                    float(centroid_sim) if centroid_sim is not None else None
+                )
+                data.append(
                     SpeakerNearestMatch(
                         speaker_id=h["speaker_id"],
                         display_name=h["display_name"],
                         embedding_index=h["embedding_index"],
                         similarity=h["similarity"],
                         meets_threshold=h["similarity"] >= threshold,
+                        centroid_similarity=centroid_sim_f,
+                        centroid_meets_threshold=(
+                            centroid_sim_f is not None and centroid_sim_f >= threshold
+                        ),
                     )
-                    for h in hits
-                ],
+                )
+            return SpeakerNearestResponse(
+                threshold=threshold,
+                data=data,
             )
         except HTTPException:
             raise

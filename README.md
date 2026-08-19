@@ -173,6 +173,7 @@ SKIP_MODEL_LOAD=1 ./run.sh --port 8000
 | `CHUNK_SILENCE_DB` | `-40` | ffmpeg `silencedetect` noise threshold (dB) |
 | `CHUNK_SILENCE_MIN_DURATION` | `0.3` | Minimum pause length to treat as a cut point (seconds) |
 | `SPEAKER_SIMILARITY_THRESHOLD` | `0.7` | Cosine similarity for speaker match |
+| `SPEAKER_MATCH_MODE` | `nearest` | Identity matching: `nearest` (best enrollment cosine, default) or `centroid` (cosine vs the mean of a speaker’s enrollments). After changing, restart API **and** worker, then **Re-match transcripts**. |
 | `FORCE_CPU` | _(unset)_ | When `1`/`true`/`yes`, use CPU for ASR, diarization, and language ID even if CUDA is available; **Dockerfile.cpu** sets this by default |
 | `REDIS_URL` | `redis://redis:6379/0` | Redis connection for the transcription job queue |
 | `QUEUE_TRANSCRIPTION` | `1` | When `0`, enqueue endpoints return `503` |

@@ -26,7 +26,7 @@ class SpeakerInfo(BaseModel):
     display_name: Optional[str] = None  # Display name if matched to stored speaker
     embedding: List[float]  # The embedding vector
     matched: bool  # Whether speaker was matched to stored identity
-    match_similarity: Optional[float] = None  # Cosine similarity when matched
+    match_similarity: Optional[float] = None  # Similarity when matched (nearest or centroid)
 
 class TranscriptionResponse(BaseModel):
     """Represents the response format for transcription"""
@@ -110,6 +110,8 @@ class SpeakerNearestMatch(BaseModel):
     embedding_index: int
     similarity: float
     meets_threshold: bool
+    centroid_similarity: Optional[float] = None
+    centroid_meets_threshold: bool = False
 
 
 class SpeakerNearestResponse(BaseModel):

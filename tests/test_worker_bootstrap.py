@@ -32,6 +32,7 @@ def _local_cfg(**overrides):
     cfg.resolved_asr_model.spec.backend = "nemo"
     cfg.chromadb_path = "/tmp/noobscribe-test-speakers"
     cfg.speaker_similarity_threshold = 0.7
+    cfg.speaker_match_mode = "nearest"
     for key, value in overrides.items():
         setattr(cfg, key, value)
     return cfg

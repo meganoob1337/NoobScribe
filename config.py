@@ -45,6 +45,21 @@ DEFAULT_NUM_SPEAKERS = None  # None means auto-detection
 DEFAULT_INCLUDE_DIARIZATION_IN_TEXT = True  # Whether to include speaker labels in the text
 
 
+VALID_SPEAKER_MATCH_MODES = frozenset({"nearest", "centroid"})
+
+
+def parse_speaker_match_mode(raw: Optional[str]) -> str:
+    """Return ``nearest`` or ``centroid``. Empty/unset defaults to ``nearest``."""
+    mode = (raw or "nearest").strip().lower()
+    if not mode:
+        mode = "nearest"
+    if mode not in VALID_SPEAKER_MATCH_MODES:
+        raise ValueError(
+            f"SPEAKER_MATCH_MODE={raw!r} is invalid; use 'nearest' or 'centroid'"
+        )
+    return mode
+
+
 def force_cpu_from_env() -> bool:
     """True when FORCE_CPU is set (force CPU even if CUDA is available)."""
     return os.environ.get("FORCE_CPU", "").lower() in ("1", "true", "yes")
@@ -102,6 +117,9 @@ class Config:
 
         # Speaker embedding settings
         self.speaker_similarity_threshold = float(os.environ.get("SPEAKER_SIMILARITY_THRESHOLD", "0.7"))
+        self.speaker_match_mode = parse_speaker_match_mode(
+            os.environ.get("SPEAKER_MATCH_MODE")
+        )
         self.chromadb_path = os.environ.get("CHROMADB_PATH", "./data/speakers")
         Path(self.chromadb_path).mkdir(parents=True, exist_ok=True)
 
@@ -226,6 +244,7 @@ class Config:
             "include_diarization_in_text": self.include_diarization_in_text,
             "has_hf_token": self.hf_token is not None,
             "speaker_similarity_threshold": self.speaker_similarity_threshold,
+            "speaker_match_mode": self.speaker_match_mode,
             "chromadb_path": self.chromadb_path,
             "model_path": self.model_path,
             "diarization_model_path": self.diarization_model_path,

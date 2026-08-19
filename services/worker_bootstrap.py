@@ -61,6 +61,7 @@ def init_worker_resources() -> Tuple[Any, Optional[SpeakerDB]]:
         _speaker_db = SpeakerDB(
             db_path=cfg.chromadb_path,
             similarity_threshold=cfg.speaker_similarity_threshold,
+            match_mode=cfg.speaker_match_mode,
         )
         logger.info("Worker speaker database initialized at %s", cfg.chromadb_path)
     except Exception as e:

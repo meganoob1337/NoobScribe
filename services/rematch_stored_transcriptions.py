@@ -47,8 +47,8 @@ def rematch_transcription_speakers_json(
 ) -> Tuple[Optional[List[Any]], bool]:
     """
     For each speaker dict with an ``embedding``, set ``display_name`` / ``matched`` /
-    ``match_similarity`` via ``SpeakerDB.query_best_match``. Rows without ``embedding``
-    are left unchanged.
+    ``match_similarity`` via ``SpeakerDB.query_best_match`` (nearest enrollment or
+    centroid, depending on ``match_mode``). Rows without ``embedding`` are left unchanged.
 
     Returns:
         (possibly_new_list, changed) — if not changed, returns the original ``speakers_json``.

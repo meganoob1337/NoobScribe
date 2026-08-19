@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.models import Recording as RecordingORM
 from database.models import TranscriptionResult as TranscriptionResultORM
-from database.speakers import SpeakerDB
+from database.speakers import SpeakerDB, embedding_cosine_similarity
 
 logger = logging.getLogger(__name__)
 
@@ -27,19 +27,6 @@ def _normalize_diarization_speaker_id(raw: Any) -> Optional[str]:
     if s.startswith("speaker_"):
         s = s[10:]
     return s
-
-
-def embedding_cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
-    """Cosine similarity in [-1, 1]; returns -1.0 if vectors are invalid or length-mismatched."""
-    a = np.asarray(a, dtype=np.float32).ravel()
-    b = np.asarray(b, dtype=np.float32).ravel()
-    if a.size == 0 or b.size == 0 or a.size != b.size:
-        return -1.0
-    na = float(np.linalg.norm(a))
-    nb = float(np.linalg.norm(b))
-    if na == 0.0 or nb == 0.0:
-        return -1.0
-    return float(np.dot(a, b) / (na * nb))
 
 
 def _longest_matching_segment(
