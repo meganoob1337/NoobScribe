@@ -54,3 +54,4 @@ Thumbs.db
 data/
 huggingface
 data2/
+tests/callhome_tests/callhome_cache/
