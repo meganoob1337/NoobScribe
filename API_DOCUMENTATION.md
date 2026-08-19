@@ -106,6 +106,8 @@ Idempotent recovery for jobs stuck in `queued` when Redis/RQ work was lost or fi
 
 Queue transcription of an uploaded audio file with optional speaker diarization. **ASR backend:** by default a worker uses a **configured local ASR model** (`ASR_MODEL` registry key, default NeMo Canary 1B v2). When **`USE_API=1`**, each audio chunk is sent to a **remote OpenAI-compatible** `POST …/audio/transcriptions` endpoint (`STT_BASE_URL` + `STT_API_KEY`); **`MODEL_ID`** is passed as the remote `model` name. Diarization, language ID, and merging behavior are unchanged in both modes.
 
+This endpoint is **Whisper-shaped** (same path, multipart fields, and response formats) but always returns **`202 Accepted`**. Several OpenAI form fields are accepted for client compatibility and **ignored** (`model`, `prompt`, `temperature`, `timestamp_granularities`, `vad_filter`, `word_timestamps`). There is no `POST /v1/audio/translations`. See the README [Whisper API compatibility](README.md#whisper-api-compatibility) table.
+
 **Endpoint:** `POST /v1/audio/transcriptions`
 
 **Status:** `202 Accepted` — returns `{ "job_id", "status": "queued" }`. Poll `GET /v1/transcription-jobs/{job_id}` for the transcript in `result` when `status` is `completed`.
@@ -119,13 +121,13 @@ Queue transcription of an uploaded audio file with optional speaker diarization.
 | `file` | File | Yes | - | The audio file to transcribe (supports common audio formats: wav, mp3, m4a, flac, etc.) |
 | `model` | string | No | `"whisper-1"` | Model identifier (accepted for compatibility). **Local mode:** server uses configured **`ASR_MODEL`** registry entry (see `config/asr_models.yaml`). **API mode (`USE_API`):** the form field is still accepted; the server uses **`MODEL_ID`** as the remote transcription `model` parameter. |
 | `language` | string | No | `null` | Language code of the audio (e.g., "en", "de", "fr"). If omitted or blank, the service runs [SpeechBrain VoxLingua107 ECAPA](https://huggingface.co/speechbrain/lang-id-voxlingua107-ecapa) on up to three segments (start, middle, 75%) of up to `LANGUAGE_ID_MAX_AUDIO_SECONDS` each and uses the majority label (first segment on a three-way tie). Shorter clips use fewer samples (one full clip when the file is ≤ segment length or too short for distinct windows). That code is passed as both NeMo `source_lang` and `target_lang`. If identification is disabled or fails, both are left unset (previous behavior). Set `DISABLE_LANGUAGE_ID=1` to skip detection. |
-| `prompt` | string | No | `null` | Optional prompt to guide the transcription (accepted for compatibility but currently ignored) |
+| `prompt` | string | No | `null` | Optional prompt (accepted for compatibility; **ignored**) |
 | `response_format` | string | No | `"json"` | Format of the response. Options: `"json"`, `"text"`, `"srt"`, `"vtt"`, `"verbose_json"` |
-| `temperature` | float | No | `0.0` | Temperature for sampling (0.0 to 1.0). Lower values make output more deterministic. |
+| `temperature` | float | No | `0.0` | Sampling temperature (accepted for compatibility; **ignored** — not passed to NeMo, ONNX, or remote STT) |
 | `timestamps` | boolean | No | `false` | Whether to include timestamps in the response (for JSON/verbose_json formats) |
-| `timestamp_granularities` | array[string] | No | `null` | Timestamp detail level. Accepts `["segment"]` to include segment-level timestamps |
-| `vad_filter` | boolean | No | `false` | Voice activity detection filter (accepted for compatibility) |
-| `word_timestamps` | boolean | No | `false` | Whether to include word-level timestamps in segments |
+| `timestamp_granularities` | array[string] | No | `null` | OpenAI timestamp-detail field (accepted for compatibility; **ignored**. Segment timestamps come from `timestamps` / `verbose_json`) |
+| `vad_filter` | boolean | No | `false` | Voice activity detection filter (accepted for compatibility; **ignored**) |
+| `word_timestamps` | boolean | No | `false` | Word-level timestamps (accepted for compatibility; **ignored** — segments have no `words[]`) |
 | `diarize` | boolean | No | `true` | Enable speaker diarization (requires HuggingFace token **or** local `DIARIZATION_MODEL_PATH`; see Offline models) |
 | `include_diarization_in_text` | boolean | No | `null` | Include speaker labels in transcript text. If `null`, uses server configuration default. |
 
@@ -607,9 +609,9 @@ Upload a short audio clip: the server stores it as a **recording** with `hide_in
 | `name` | string | No | Stored recording display name |
 | `language` | string | No | Same as `POST /v1/recordings/{id}/transcribe` |
 | `response_format` | string | No | Default `verbose_json` (`json`, `text`, `srt`, `vtt`, `verbose_json`) |
-| `temperature` | float | No | `0.0` (accepted for API parity) |
+| `temperature` | float | No | `0.0` (accepted for API parity; **ignored**) |
 | `timestamps` | boolean | No | Default `true` |
-| `word_timestamps` | boolean | No | Default `false` |
+| `word_timestamps` | boolean | No | Default `false` (accepted; **ignored**) |
 | `diarize` | boolean | No | Default `true` |
 | `include_diarization_in_text` | boolean | No | Optional |
 
@@ -1023,7 +1025,7 @@ Deletes the row, cascades stored transcriptions, and removes the audio file from
 
 **Status:** `202 Accepted` — `{ "job_id", "status": "queued", "recording_id" }`.
 
-Same form fields as `POST /v1/audio/transcriptions` except **no** `file`: `language`, `response_format`, `temperature`, `timestamps`, `word_timestamps`, `diarize`, `include_diarization_in_text`.
+Same form fields as `POST /v1/audio/transcriptions` except **no** `file`: `language`, `response_format`, `temperature`, `timestamps`, `word_timestamps`, `diarize`, `include_diarization_in_text`. `temperature` and `word_timestamps` are accepted but **ignored** (same as the OpenAI-style endpoint).
 
 When the job completes, the worker persists a **TranscriptionResult** (segments + speakers JSON). For `json` / `verbose_json`, **`result`** includes:
 
@@ -1097,7 +1099,7 @@ Re-enqueues `queued` jobs older than `stale_seconds` when the linked RQ job is m
 
 **Response:** `{ "object": "list", "data": [ TranscriptionResultResponse ] }`
 
-**TranscriptionResultResponse:** `id`, `recording_id`, `full_text`, `segments` (JSON array), `language`, `model_id`, `diarization_enabled`, `speakers` (JSON array), `duration_seconds`, `word_timestamps`, `created_at`.
+**TranscriptionResultResponse:** `id`, `recording_id`, `full_text`, `segments` (JSON array), `language`, `model_id`, `diarization_enabled`, `speakers` (JSON array), `duration_seconds`, `word_timestamps` (boolean request flag; word-level timestamps are **not** produced), `created_at`.
 
 ---
 

@@ -2,7 +2,7 @@
 
 GPU-backed Docker setup for **NoobScribe** (NeMo ASR + optional pyannote diarization).
 
-Transcription is **asynchronous**: each Compose profile runs **Redis**, an **API** container (HTTP only), and a **worker** container that consumes the job queue. See **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** for the full design.
+Transcription is **asynchronous**: each Compose profile runs **Redis**, an **API** container (HTTP only), and a **worker** container that consumes the job queue. See the architecture diagram in **[README.md](README.md#architecture)** and the worker notes below.
 
 ## Prerequisites
 

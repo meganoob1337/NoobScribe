@@ -74,7 +74,7 @@ Rebuild note: permissions UX, codec support, and “tab vs window” audio behav
 - **Rename**: Editable name + “Save name” → `PATCH /v1/recordings/:id` JSON `{ name }`, then reload recording.
 - **Audio playback**: `<audio>` src = `GET /v1/recordings/:id/audio` (URL builder in client).
 - **Transcribe panel**:
-  - Options bound to state: optional **language** string; checkboxes **diarize**, **word_timestamps**, **include_diarization_in_text**.
+  - Options bound to state: optional **language** string; checkboxes **diarize**, **word_timestamps** (sent on the request; the backend currently ignores it), **include_diarization_in_text**.
   - **Run** sends `POST /v1/recordings/:id/transcribe` as **FormData** (returns `202` + `job_id`), then refreshes the **Active jobs** panel via `GET /v1/recordings/:id/transcription-jobs`. The button stays enabled so multiple jobs can be queued with different options.
   - Queue/API errors show inline in the transcribe panel; job progress and cancel are not shown here.
 - **Active jobs panel**: Shows **queued** and **running** jobs for this recording only. Polls every ~2s while any are active. Each row: status badge, job type, live progress from `progress_stage` / `progress_current` / `progress_total` (e.g. “Loading diarization model…”, “Running diarization…”, “Loading transcription model…”, “Transcribing chunk 3/10…”), **Cancel** → `POST /v1/transcription-jobs/:jobId/cancel`. When the last active job finishes, the recording is re-fetched so the **Stored transcriptions** list updates.
