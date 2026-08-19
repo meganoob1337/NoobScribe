@@ -249,7 +249,8 @@ async def delete_recording(recording_id: str, session: AsyncSession = Depends(ge
     if not rec:
         raise HTTPException(status_code=404, detail="Recording not found")
     fp = rec.file_path
-    session.delete(rec)
+    await session.delete(rec)
+    await session.flush()
     try:
         if fp and os.path.exists(fp):
             os.unlink(fp)
