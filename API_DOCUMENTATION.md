@@ -302,7 +302,7 @@ print(response.json())
 
 ### 2. Health Check
 
-Check the health status of the API and the loaded model.
+Check the health status of the API and whether transcription is ready (in-process model or a connected worker).
 
 **Endpoint:** `GET /health`
 
@@ -353,7 +353,7 @@ Check the health status of the API and the loaded model.
 **Response Fields:**
 - `status` (string): Always "ok" if the API is running
 - `version` (string): API version
-- `model_loaded` (boolean): Whether transcription is ready: **true** if the local ASR model is loaded, **`USE_API`** is enabled (remote STT; no local ASR weights), or **`LOAD_MODELS_ON_DEMAND`** is set on a sync API process (model loads per job). With the Docker queue setup (`SKIP_MODEL_LOAD` / workers), readiness is mainly indicated by `workers_registered`.
+- `model_loaded` (boolean): Whether transcription is ready. **true** if: a queue worker is registered (`queue_enabled` and `workers_registered` ≥ 1), the local ASR model is loaded in this process, **`USE_API`** is enabled (remote STT; no local ASR weights), or **`LOAD_MODELS_ON_DEMAND`** is set on a sync API process (model loads per job). With the Docker queue setup (`SKIP_MODEL_LOAD` / workers), this tracks worker presence rather than ASR weights in the API process.
 - `speaker_db_initialized` (boolean): Whether the Chroma speaker embedding store is available. The health check attempts lazy initialization if startup failed; **false** means speaker CRUD, rematch, and nearest-embedding endpoints return **503** (see server logs and `CHROMADB_PATH`).
 - `model_id` (string): Active transcription model name — **`ASR_MODEL`** registry key in local mode; **`MODEL_ID`** in remote API mode
 - `asr_model` (string, optional): Local registry key when not in API mode; `null` when `USE_API=1`

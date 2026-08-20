@@ -121,8 +121,8 @@
       <div class="shrink-0 border-t border-slate-800/80 p-4">
         <div x-show="health && !healthError" class="space-y-1 text-xs text-slate-500" x-cloak>
           <div class="flex items-center gap-2">
-            <span class="h-1.5 w-1.5 shrink-0 rounded-full" :class="health.model_loaded ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]' : 'bg-amber-400'"></span>
-            <span x-text="health.model_loaded ? 'Model ready' : 'Model not loaded'"></span>
+            <span class="h-1.5 w-1.5 shrink-0 rounded-full" :class="transcriptionReady() ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]' : 'bg-amber-400'"></span>
+            <span x-text="healthReadyLabel()"></span>
           </div>
           <p x-show="queueWorkerWarning()" class="text-amber-200/90" x-text="queueWorkerWarning()"></p>
           <p class="line-clamp-2 font-mono text-[0.65rem] text-slate-600" x-text="health.config?.model_id || ''"></p>
@@ -146,7 +146,7 @@
         <div class="min-w-0 flex-1">
           <p class="truncate text-sm font-semibold text-white">NoobScribe</p>
           <p class="truncate text-xs text-slate-500" x-show="health && !healthError">
-            <span x-text="health.model_loaded ? 'Ready' : 'Starting…'"></span>
+            <span x-text="healthReadyShortLabel()"></span>
           </p>
         </div>
       </header>

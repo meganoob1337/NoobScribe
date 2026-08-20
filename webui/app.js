@@ -128,6 +128,7 @@ function noobScribeApp() {
       window.addEventListener("message", this._recordPipMainMessageHandler);
       this.navigate();
       this.refreshHealth();
+      setInterval(() => this.refreshHealth(), 10000);
     },
 
     refreshHealth() {
@@ -139,6 +140,33 @@ function noobScribeApp() {
         .catch((e) => {
           this.healthError = String(e.message || e);
         });
+    },
+
+    workersReady() {
+      const h = this.health;
+      return !!(h && h.queue_enabled && (h.workers_registered || 0) > 0);
+    },
+
+    transcriptionReady() {
+      const h = this.health;
+      if (!h) return false;
+      if (h.queue_enabled) return this.workersReady();
+      return !!h.model_loaded;
+    },
+
+    healthReadyLabel() {
+      const h = this.health;
+      if (!h) return "";
+      if (h.queue_enabled) {
+        const n = h.workers_registered || 0;
+        if (n > 0) return n === 1 ? "Worker ready" : n + " workers ready";
+        return "No worker";
+      }
+      return h.model_loaded ? "Model ready" : "Model not loaded";
+    },
+
+    healthReadyShortLabel() {
+      return this.transcriptionReady() ? "Ready" : (this.health && this.health.queue_enabled ? "No worker" : "Starting…");
     },
 
     queueWorkerWarning() {

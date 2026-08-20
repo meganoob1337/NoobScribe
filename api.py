@@ -287,24 +287,31 @@ def create_app() -> FastAPI:
     @app.get("/health")
     async def health_check():
         """
-        Check the health of the API and the loaded model
+        Check API health and whether transcription can run
+        (in-process model or a connected queue worker).
         """
         global asr_model
 
         queue_stats = get_queue_stats()
+        workers_ready = (
+            config.queue_enabled and queue_stats.get("workers_registered", 0) > 0
+        )
+        # In queue/worker mode the API does not load ASR; a registered worker
+        # means transcription can run. Otherwise readiness is in-process.
+        model_loaded = workers_ready or (
+            asr_model is not None
+            or getattr(config, "use_api", False)
+            or (
+                getattr(config, "load_models_on_demand", False)
+                and not config.queue_enabled
+                and not config.skip_model_load
+            )
+        )
 
         return {
             "status": "ok",
             "version": "1.0.0",
-            "model_loaded": (
-                asr_model is not None
-                or getattr(config, "use_api", False)
-                or (
-                    getattr(config, "load_models_on_demand", False)
-                    and not config.queue_enabled
-                    and not config.skip_model_load
-                )
-            ),
+            "model_loaded": model_loaded,
             "speaker_db_initialized": init_speaker_db(),
             "model_id": config.get_transcription_model_name(),
             "asr_model": getattr(config, "asr_model", None),

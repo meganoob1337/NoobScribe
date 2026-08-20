@@ -37,7 +37,7 @@ Navigation uses `location.hash` (no server-side router). `hashchange` triggers p
 
 - **Layout**: Fixed **sidebar** on large screens; **slide-out drawer** on small screens with backdrop, hamburger in sticky header, Escape closes drawer.
 - **Nav items**: Recordings (active for list + detail + transcript), Upload, Record, Speakers, Jobs; **API docs** link to `/docs` (full navigation, not hash).
-- **Health** (`GET /health`): Fetched once on init. Sidebar (and mobile header subtitle) show model readiness (`model_loaded`) and `config.asr_model` / `config.model_id`. When the queue is enabled and Redis is up but `workers_registered` is 0, the sidebar shows an amber warning that jobs will stay queued. Errors surface as amber “API: …” text.
+- **Health** (`GET /health`): Fetched on init and polled every ~10s. Sidebar (and mobile header subtitle) show transcription readiness: in queue/worker mode, a connected worker (`workers_registered` ≥ 1) is shown as **Worker ready** (green); otherwise **No worker** (amber). In sync API mode, `model_loaded` is shown as **Model ready** / **Model not loaded**. Also shows `config.asr_model` / `config.model_id`. When the queue is enabled and Redis is up but `workers_registered` is 0, the sidebar shows an amber warning that jobs will stay queued. Errors surface as amber “API: …” text.
 
 ## Feature: recordings list (`list`)
 

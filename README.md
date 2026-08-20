@@ -84,7 +84,7 @@ The built-in UI at `/ui` is a single-page app for managing recordings, transcrip
 - **Jobs page (`#/jobs`):** list visible transcription jobs, live poll, cancel queued/running jobs, and open completed transcripts.
 - **Transcript viewer:** formatted transcript, **copy**, `.txt` download, per-segment snippet playback, **re-match** against speaker memory, nearest-embedding similarity, and save detected speaker embeddings.
 - **Speaker management:** list/delete speakers, add embeddings from snippet extraction or manual vector input, inspect embedding snippets, delete individual embeddings, and re-match stored transcripts.
-- **Sidebar health:** model/queue status; amber warning when Redis is up but `workers_registered` is 0 (jobs stay queued).
+- **Sidebar health:** worker or in-process model status (polled ~10s); amber warning when Redis is up but `workers_registered` is 0 (jobs stay queued).
 
 ## Quick start (Docker)
 
