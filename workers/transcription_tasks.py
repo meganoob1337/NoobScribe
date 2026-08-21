@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from sqlalchemy import update
+
 from audio import convert_audio_to_wav
 from config import get_config
 from database.models import Recording as RecordingORM
@@ -53,15 +55,15 @@ def _check_job_cancelled(job_id: str) -> None:
 
 def _make_progress_callback(job_id: str):
     def on_progress(stage: str, current: int, total: int) -> None:
-        _check_job_cancelled(job_id)
         with get_sync_session() as session:
-            update_job_progress_sync(
+            if not update_job_progress_sync(
                 session,
                 job_id,
                 stage=stage,
                 current=current,
                 total=total,
-            )
+            ):
+                raise JobCancelled(f"Job {job_id} was cancelled")
 
     return on_progress
 
@@ -105,6 +107,8 @@ def _run_recording_job(job_id: str, recording_id: str) -> None:
         job = session.get(TranscriptionJobORM, job_id)
         if not job:
             raise RuntimeError(f"Job {job_id} not found")
+        if job.status == JOB_STATUS_CANCELLED:
+            raise JobCancelled(f"Job {job_id} was cancelled")
         rec = session.get(RecordingORM, recording_id)
         if not rec:
             raise FileNotFoundError(f"Recording {recording_id} not found")
@@ -132,6 +136,9 @@ def _run_recording_job(job_id: str, recording_id: str) -> None:
     )
 
     with get_sync_session() as session:
+        job_row = session.get(TranscriptionJobORM, job_id)
+        if not job_row or job_row.status == JOB_STATUS_CANCELLED:
+            raise JobCancelled(f"Job {job_id} was cancelled")
         rec_row = session.get(RecordingORM, recording_id)
         if not rec_row:
             raise RuntimeError(f"Recording {recording_id} not found")
@@ -142,15 +149,28 @@ def _run_recording_job(job_id: str, recording_id: str) -> None:
             diarize=bool(params.get("diarize", True)),
             word_timestamps=bool(params.get("word_timestamps", False)),
         )
-        job_row = session.get(TranscriptionJobORM, job_id)
-        if job_row:
-            job_row.transcription_id = tid
-            job_row.result_json = _pipeline_result_to_job_payload(
-                pr,
-                transcription_id=tid,
-                recording_id=recording_id,
-                response_format=params.get("response_format", "verbose_json"),
+        payload = _pipeline_result_to_job_payload(
+            pr,
+            transcription_id=tid,
+            recording_id=recording_id,
+            response_format=params.get("response_format", "verbose_json"),
+        )
+        result = session.execute(
+            update(TranscriptionJobORM)
+            .where(
+                TranscriptionJobORM.id == job_id,
+                TranscriptionJobORM.status == JOB_STATUS_RUNNING,
             )
+            .values(
+                transcription_id=tid,
+                result_json=payload,
+                status=JOB_STATUS_COMPLETED,
+                completed_at=_utcnow(),
+                progress_stage="completed",
+            )
+        )
+        if result.rowcount == 0:
+            raise JobCancelled(f"Job {job_id} was cancelled")
 
 
 def _run_openai_job(job_id: str) -> None:
@@ -159,6 +179,8 @@ def _run_openai_job(job_id: str) -> None:
         job = session.get(TranscriptionJobORM, job_id)
         if not job:
             raise RuntimeError(f"Job {job_id} not found")
+        if job.status == JOB_STATUS_CANCELLED:
+            raise JobCancelled(f"Job {job_id} was cancelled")
         params = _params(job)
     temp_file = params.get("temp_file")
     if not temp_file or not os.path.exists(temp_file):
@@ -167,7 +189,9 @@ def _run_openai_job(job_id: str) -> None:
     wav_file: Optional[str] = None
     pr = None
     try:
+        _check_job_cancelled(job_id)
         wav_file = convert_audio_to_wav(temp_file)
+        _check_job_cancelled(job_id)
         asr_model = get_worker_asr_model()
         speaker_db = get_worker_speaker_db()
         on_progress = _make_progress_callback(job_id)
@@ -186,13 +210,29 @@ def _run_openai_job(job_id: str) -> None:
         )
         with get_sync_session() as session:
             job_row = session.get(TranscriptionJobORM, job_id)
-            if job_row:
-                job_row.result_json = _pipeline_result_to_job_payload(
-                    pr,
-                    transcription_id=None,
-                    recording_id=None,
-                    response_format=params.get("response_format", "json"),
+            if not job_row or job_row.status == JOB_STATUS_CANCELLED:
+                raise JobCancelled(f"Job {job_id} was cancelled")
+            payload = _pipeline_result_to_job_payload(
+                pr,
+                transcription_id=None,
+                recording_id=None,
+                response_format=params.get("response_format", "json"),
+            )
+            result = session.execute(
+                update(TranscriptionJobORM)
+                .where(
+                    TranscriptionJobORM.id == job_id,
+                    TranscriptionJobORM.status == JOB_STATUS_RUNNING,
                 )
+                .values(
+                    result_json=payload,
+                    status=JOB_STATUS_COMPLETED,
+                    completed_at=_utcnow(),
+                    progress_stage="completed",
+                )
+            )
+            if result.rowcount == 0:
+                raise JobCancelled(f"Job {job_id} was cancelled")
     finally:
         if pr is not None:
             for chunk_path in pr.paths_to_cleanup:
@@ -230,8 +270,20 @@ def _acquire_job_for_processing(job_id: str) -> Optional[tuple[str, Optional[str
             if job.status not in (JOB_STATUS_RUNNING, JOB_STATUS_QUEUED):
                 logger.info("Job %s already in status %s; skipping", job_id, job.status)
                 return None
-            job.status = JOB_STATUS_RUNNING
-            job.started_at = _utcnow()
+            values: Dict[str, Any] = {"status": JOB_STATUS_RUNNING}
+            if job.started_at is None:
+                values["started_at"] = _utcnow()
+            result = session.execute(
+                update(TranscriptionJobORM)
+                .where(
+                    TranscriptionJobORM.id == job_id,
+                    TranscriptionJobORM.status.in_((JOB_STATUS_QUEUED, JOB_STATUS_RUNNING)),
+                )
+                .values(**values)
+            )
+            if result.rowcount == 0:
+                logger.info("Job %s was cancelled before acquire; skipping", job_id)
+                return None
             session.flush()
             return job.job_type, job.recording_id
     raise RuntimeError(f"Job {job_id} not found in database after retries")
@@ -258,11 +310,18 @@ def process_transcription_job(job_id: str) -> None:
             raise ValueError(f"Unknown job type: {job_type}")
 
         with get_sync_session() as session:
-            job_row = session.get(TranscriptionJobORM, job_id)
-            if job_row and job_row.status == JOB_STATUS_RUNNING:
-                job_row.status = JOB_STATUS_COMPLETED
-                job_row.completed_at = _utcnow()
-                job_row.progress_stage = "completed"
+            session.execute(
+                update(TranscriptionJobORM)
+                .where(
+                    TranscriptionJobORM.id == job_id,
+                    TranscriptionJobORM.status == JOB_STATUS_RUNNING,
+                )
+                .values(
+                    status=JOB_STATUS_COMPLETED,
+                    completed_at=_utcnow(),
+                    progress_stage="completed",
+                )
+            )
     except JobCancelled:
         logger.info("Job %s cancelled during processing", job_id)
         with get_sync_session() as session:
@@ -275,9 +334,16 @@ def process_transcription_job(job_id: str) -> None:
     except Exception as e:
         logger.error("Job %s failed: %s", job_id, e)
         with get_sync_session() as session:
-            job_row = session.get(TranscriptionJobORM, job_id)
-            if job_row and job_row.status == JOB_STATUS_RUNNING:
-                job_row.status = JOB_STATUS_FAILED
-                job_row.error_message = str(e)
-                job_row.completed_at = _utcnow()
+            session.execute(
+                update(TranscriptionJobORM)
+                .where(
+                    TranscriptionJobORM.id == job_id,
+                    TranscriptionJobORM.status == JOB_STATUS_RUNNING,
+                )
+                .values(
+                    status=JOB_STATUS_FAILED,
+                    error_message=str(e),
+                    completed_at=_utcnow(),
+                )
+            )
         raise

@@ -82,7 +82,7 @@ Returns queued and running jobs, plus completed/failed/cancelled jobs **only whi
 
 **Cancel a job:** `POST /v1/transcription-jobs/{job_id}/cancel`
 
-Only `queued` and `running` jobs can be cancelled (`409` otherwise). Sets `status` to `cancelled`. Running jobs stop cooperatively between pipeline chunks (SimpleWorker).
+Only `queued` and `running` jobs can be cancelled (`409` otherwise). Sets `status` to `cancelled`. Queued jobs are removed from Redis; running jobs stop cooperatively between pipeline stages/chunks (SimpleWorker cannot kill in-flight GPU work). Cancelled jobs are not persisted as transcriptions.
 
 **Reconcile stuck queued jobs:** `POST /v1/transcription-jobs/reconcile?stale_seconds=60`
 
@@ -1067,6 +1067,8 @@ Other formats (`text`, `srt`, `vtt`) place plain text in `result.text` (and `res
 **Endpoint:** `POST /v1/transcription-jobs/{job_id}/cancel`
 
 **Response:** Updated `TranscriptionJobResponse` with `status: "cancelled"`.
+
+Queued jobs are dropped from Redis. Running jobs stop cooperatively between pipeline stages/chunks and are not persisted as transcriptions.
 
 **Status codes:** `200`, `404`, `409` (not cancellable).
 

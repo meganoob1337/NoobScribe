@@ -50,7 +50,13 @@ def run_transcription_pipeline(
 
     When ``config.load_models_on_demand`` is set and local ASR is used, the ASR
     model is loaded after language ID / diarization and unloaded before return.
+
+    ``on_progress`` is invoked between stages and after each ASR chunk so
+    cooperative cancel can stop the run before persist.
     """
+    if on_progress:
+        on_progress("preparing", 0, 1)
+
     effective_language = resolve_transcription_language(language, wav_file, config)
 
     audio_chunks = split_audio_into_chunks(
@@ -142,6 +148,8 @@ def run_transcription_pipeline(
                     segment.end += chunk.start_sec
             all_text.append(chunk_text)
             all_segments.extend(chunk_segments)
+            if on_progress:
+                on_progress("transcribing", i + 1, total_chunks)
 
         full_text = " ".join(all_text)
 

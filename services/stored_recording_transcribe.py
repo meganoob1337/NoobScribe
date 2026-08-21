@@ -37,6 +37,8 @@ def run_transcription_for_recording_path(
     timestamps: bool = True,
     on_progress: Callable[[str, int, int], None] | None = None,
 ) -> PipelineRunResult:
+    if on_progress:
+        on_progress("preparing", 0, 1)
     wav_file = convert_audio_to_wav(recording_file_path)
     try:
         pr = run_transcription_pipeline(

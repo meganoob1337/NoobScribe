@@ -11,9 +11,12 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from services.job_queue import rq_job_needs_reenqueue
 from services.transcription_jobs import (
+    JOB_STATUS_CANCELLED,
     JOB_STATUS_FAILED,
     JOB_STATUS_QUEUED,
+    JOB_STATUS_RUNNING,
     reconcile_stale_queued_jobs,
+    update_job_progress_sync,
 )
 
 
@@ -129,6 +132,34 @@ class TestReconcileStaleQueuedJobs(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(stats["failed"], 1)
         self.assertEqual(stale_job.status, JOB_STATUS_FAILED)
         self.assertIn("Reconcile failed", stale_job.error_message)
+
+
+class TestUpdateJobProgressSync(unittest.TestCase):
+    def test_skips_write_when_cancelled(self):
+        job = MagicMock()
+        job.status = JOB_STATUS_CANCELLED
+        session = MagicMock()
+        session.get.return_value = job
+
+        ok = update_job_progress_sync(session, "job-1", stage="transcribing", current=1, total=2)
+
+        self.assertFalse(ok)
+        session.flush.assert_not_called()
+
+    def test_writes_progress_when_running(self):
+        job = MagicMock()
+        job.status = JOB_STATUS_RUNNING
+        job.progress_stage = None
+        session = MagicMock()
+        session.get.return_value = job
+
+        ok = update_job_progress_sync(session, "job-1", stage="transcribing", current=2, total=4)
+
+        self.assertTrue(ok)
+        self.assertEqual(job.progress_stage, "transcribing")
+        self.assertEqual(job.progress_current, 2)
+        self.assertEqual(job.progress_total, 4)
+        session.flush.assert_called_once()
 
 
 if __name__ == "__main__":

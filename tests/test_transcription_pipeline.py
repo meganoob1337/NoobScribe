@@ -176,6 +176,42 @@ class TestTranscriptionPipelineOrdering(unittest.TestCase):
         mock_load.assert_called_once_with(config.resolved_asr_model)
         mock_unload.assert_called_once_with(loaded)
 
+    @patch("services.transcription_pipeline.transcribe_api_chunk")
+    @patch("services.transcription_pipeline.split_audio_into_chunks")
+    @patch("services.transcription_pipeline.resolve_transcription_language", return_value="en")
+    def test_progress_cancel_after_chunk_skips_remaining(self, _mock_lang, mock_split, mock_transcribe):
+        from audio import AudioChunk
+        from services.transcription_pipeline import run_transcription_pipeline
+
+        mock_split.return_value = [
+            AudioChunk(path="c0.wav", start_sec=0.0),
+            AudioChunk(path="c1.wav", start_sec=23.0),
+        ]
+        mock_transcribe.side_effect = [
+            ("a", [WhisperSegment(id=0, start=0.0, end=1.0, text="a")]),
+            ("b", [WhisperSegment(id=0, start=0.5, end=1.5, text="b")]),
+        ]
+        transcribing_hits = []
+
+        def on_progress(stage, current, total):
+            if stage != "transcribing":
+                return
+            transcribing_hits.append(current)
+            if current == 1 and transcribing_hits.count(1) == 2:
+                raise RuntimeError("cancelled")
+
+        with self.assertRaisesRegex(RuntimeError, "cancelled"):
+            run_transcription_pipeline(
+                "audio.wav",
+                None,
+                _base_config(),
+                None,
+                diarize=False,
+                on_progress=on_progress,
+            )
+
+        self.assertEqual(mock_transcribe.call_count, 1)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -153,14 +153,18 @@ def update_job_progress_sync(
     stage: str,
     current: int,
     total: int,
-) -> None:
+) -> bool:
+    """Write progress. Returns False if the job is already cancelled."""
     job = session.get(TranscriptionJobORM, job_id)
     if not job:
-        return
+        return True
+    if job.status == JOB_STATUS_CANCELLED:
+        return False
     job.progress_stage = stage
     job.progress_current = current
     job.progress_total = total
     session.flush()
+    return True
 
 
 def list_jobs_for_recording_sync(session: Session, recording_id: str) -> List[TranscriptionJobORM]:
