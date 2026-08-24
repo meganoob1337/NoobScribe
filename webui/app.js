@@ -32,7 +32,6 @@ function noobScribeApp() {
     transcribeOpts: {
       language: "",
       diarize: true,
-      word_timestamps: false,
       include_diarization_in_text: true,
     },
 
@@ -40,6 +39,7 @@ function noobScribeApp() {
     trLoading: false,
     trError: null,
     copied: false,
+    showSegmentTimestamps: false,
 
     /** Transcript segment snippet playback (single hidden Audio, no preload until play) */
     _trSegmentAudio: null,
@@ -941,7 +941,6 @@ function noobScribeApp() {
         await NoobScribeApi.transcribeRecording(this.route.recordingId, {
           language: this.transcribeOpts.language || null,
           diarize: this.transcribeOpts.diarize,
-          word_timestamps: this.transcribeOpts.word_timestamps,
           include_diarization_in_text: this.transcribeOpts.include_diarization_in_text,
           response_format: "verbose_json",
           timestamps: true,
@@ -1696,6 +1695,13 @@ function noobScribeApp() {
       return body.replace(re, "").trim();
     },
 
+    /** Segment time range like "0.0–12.4s" for the formatted transcript. */
+    _formatSegmentTimestamp(seg) {
+      const start = seg && seg.start != null ? Number(seg.start).toFixed(1) : "?";
+      const end = seg && seg.end != null ? Number(seg.end).toFixed(1) : "?";
+      return start + "–" + end + "s";
+    },
+
     /** Full transcript with line breaks between segments and resolved speaker labels. */
     formattedTranscript() {
       const t = this.transcription;
@@ -1705,10 +1711,15 @@ function noobScribeApp() {
         const lines = segs.map((seg) => {
           const label = seg.speaker ? this.resolveSpeaker(seg.speaker) : "";
           const body = this._stripDiarizationPrefix(seg.text, seg.speaker);
-          if (label && label !== "unknown") {
-            return "[" + label + "] " + body;
+          const parts = [];
+          if (this.showSegmentTimestamps) {
+            parts.push("[" + this._formatSegmentTimestamp(seg) + "]");
           }
-          return body;
+          if (label && label !== "unknown") {
+            parts.push("[" + label + "]");
+          }
+          parts.push(body);
+          return parts.filter(Boolean).join(" ");
         });
         return lines.join("\n\n");
       }

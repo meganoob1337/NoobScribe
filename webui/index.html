@@ -349,10 +349,6 @@
                   <span>Diarize</span>
                 </label>
                 <label class="inline-flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" x-model="transcribeOpts.word_timestamps" class="rounded border-slate-600" />
-                  <span>Word timestamps</span>
-                </label>
-                <label class="inline-flex items-center gap-2 cursor-pointer">
                   <input type="checkbox" x-model="transcribeOpts.include_diarization_in_text" class="rounded border-slate-600" />
                   <span>Speaker labels in text</span>
                 </label>
@@ -467,7 +463,11 @@
               <h2 class="text-lg font-medium text-white">Transcription</h2>
               <span x-show="copied" x-transition class="text-xs text-green-400 ml-1">Copied!</span>
             </div>
-            <div class="flex gap-2">
+            <div class="flex flex-wrap items-center gap-3">
+              <label class="inline-flex items-center gap-2 cursor-pointer text-sm text-slate-300">
+                <input type="checkbox" x-model="showSegmentTimestamps" class="rounded border-slate-600" />
+                <span>Show timestamps</span>
+              </label>
               <button type="button" @click="copyTranscription()" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-sm text-white border border-slate-600">Copy</button>
               <button type="button" @click="downloadTranscription()" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-sm text-white border border-slate-600">Download .txt</button>
             </div>

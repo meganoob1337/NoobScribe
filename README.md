@@ -82,7 +82,7 @@ The built-in UI at `/ui` is a single-page app for managing recordings, transcrip
 - **Browser recording:** capture microphone and/or tab/window audio, live level meters, preview, upload, and discard. In Chrome or Edge, enable **Share tab audio** or **Share system audio** in the share picker when capturing tab/screen audio. A floating picture-in-picture window shows recording time and mute/stop controls while you work in other apps.
 - **Recording detail:** rename or **delete** recordings, play original audio, queue one or more transcription jobs (language, diarize, include speaker labels in text), chunk-level progress while a worker runs, and review prior transcription runs.
 - **Jobs page (`#/jobs`):** list visible transcription jobs, live poll, cancel queued/running jobs, and open completed transcripts.
-- **Transcript viewer:** formatted transcript, **copy**, `.txt` download, per-segment snippet playback, **re-match** against speaker memory, nearest-embedding similarity, and save detected speaker embeddings.
+- **Transcript viewer:** formatted transcript, optional **show timestamps** per segment (from stored JSON), **copy**, `.txt` download, per-segment snippet playback, **re-match** against speaker memory, nearest-embedding similarity, and save detected speaker embeddings.
 - **Speaker management:** list/delete speakers, add embeddings from snippet extraction or manual vector input, inspect embedding snippets, delete individual embeddings, and re-match stored transcripts.
 - **Sidebar health:** worker or in-process model status (polled ~10s); amber warning when Redis is up but `workers_registered` is 0 (jobs stay queued).
 
