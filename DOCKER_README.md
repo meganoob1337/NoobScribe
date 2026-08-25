@@ -154,7 +154,7 @@ Compose mounts **`./data:/app/data`**, which stores:
 
 Ephemeral transcoding uses `TEMP_DIR` (default `/tmp/noobscribe` inside the app config unless overridden).
 
-API and worker containers must use the **same** `./data` mount so workers can read recordings and write job results.
+API and worker containers must use the **same** `./data` mount so workers can read recordings and write job results. Speaker enrollments live in `./data/speakers/`; the worker refreshes its in-memory enrollment cache at the start of each job so names saved in the API are used on the next transcription.
 
 ## API and UI
 

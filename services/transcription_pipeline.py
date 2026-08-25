@@ -96,11 +96,18 @@ def run_transcription_pipeline(
                         on_progress("diarization", 1, 1)
                     if diarization_result.embeddings and speaker_db:
                         logger.info("Matching speakers against stored embeddings")
-                        speaker_mapping = diarizer.match_speakers(
-                            diarization_result.embeddings,
-                            speaker_db,
-                            threshold=config.speaker_similarity_threshold,
-                        )
+                        try:
+                            speaker_mapping = diarizer.match_speakers(
+                                diarization_result.embeddings,
+                                speaker_db,
+                                threshold=config.speaker_similarity_threshold,
+                            )
+                        except Exception as e:
+                            logger.error(
+                                "Speaker matching failed; continuing without stored names: %s",
+                                e,
+                            )
+                            speaker_mapping = None
                 else:
                     logger.warning("Diarization requested but pipeline is not available")
 
@@ -208,7 +215,15 @@ def run_transcription_pipeline(
                 matched = False
                 match_similarity = None
                 if speaker_db:
-                    best, similarity = speaker_db.query_best_match(embedding)
+                    try:
+                        best, similarity = speaker_db.query_best_match(embedding)
+                    except Exception as e:
+                        logger.error(
+                            "Speaker match for %s failed; leaving unmatched: %s",
+                            speaker_id,
+                            e,
+                        )
+                        best, similarity = None, 0.0
                     if best and similarity >= threshold:
                         display_name = best.display_name
                         matched = True

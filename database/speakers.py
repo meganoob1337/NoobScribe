@@ -77,6 +77,7 @@ class SpeakerDB:
         self.similarity_threshold = similarity_threshold
         self.match_mode = mode
         self._centroid_cache: Optional[Dict[str, Dict[str, Any]]] = None
+        self._enrollment_cache: Optional[List[Dict[str, Any]]] = None
 
         # Initialize ChromaDB client
         try:
@@ -102,40 +103,79 @@ class SpeakerDB:
 
     def _invalidate_centroid_cache(self) -> None:
         self._centroid_cache = None
+        self._enrollment_cache = None
 
-    def _speaker_centroids(self) -> Dict[str, Dict[str, Any]]:
-        """Map speaker_id -> display_name, created_at, embedding_count, centroid."""
-        if self._centroid_cache is not None:
-            return self._centroid_cache
+    def refresh(self) -> None:
+        """Drop in-memory caches so the next read sees writes from other processes."""
+        self._invalidate_centroid_cache()
+
+    def _enrollments(self) -> List[Dict[str, Any]]:
+        """Load every stored embedding via ``collection.get`` (not HNSW ``query``).
+
+        Chroma PersistentClient HNSW readers are not multi-process safe. The API
+        writes enrollments while the worker holds an older client; ``query()``
+        then fails with ``Error creating hnsw segment reader: Nothing found on
+        disk``. ``get(include=["embeddings"])`` still returns the vectors.
+        """
+        if self._enrollment_cache is not None:
+            return self._enrollment_cache
 
         results = self.collection.get(include=["embeddings", "metadatas"])
         ids = results.get("ids") or []
         embeddings = results.get("embeddings")
         metadatas = results.get("metadatas") or []
-        grouped: Dict[str, Dict[str, Any]] = {}
+        rows: List[Dict[str, Any]] = []
         if embeddings is None or len(ids) == 0:
-            self._centroid_cache = {}
-            return self._centroid_cache
+            self._enrollment_cache = rows
+            return rows
 
-        for i, _chroma_id in enumerate(ids):
+        for i, chroma_id in enumerate(ids):
             meta = metadatas[i] if i < len(metadatas) else None
             if not meta:
                 continue
             speaker_id = str(meta.get("speaker_id", "") or "")
             if not speaker_id:
                 continue
+            if i >= len(embeddings):
+                continue
             vec = embeddings[i]
             if vec is None:
                 continue
-            bucket = grouped.setdefault(
-                speaker_id,
+            emb_idx = meta.get("embedding_index")
+            if emb_idx is None and chroma_id and "_" in str(chroma_id):
+                try:
+                    emb_idx = int(str(chroma_id).rsplit("_", 1)[-1])
+                except ValueError:
+                    emb_idx = 0
+            rows.append(
                 {
+                    "chroma_id": str(chroma_id),
+                    "speaker_id": speaker_id,
                     "display_name": str(meta.get("display_name", "") or ""),
                     "created_at": str(meta.get("created_at", "") or ""),
+                    "embedding_index": int(emb_idx if emb_idx is not None else 0),
+                    "vector": np.asarray(vec, dtype=np.float32),
+                }
+            )
+        self._enrollment_cache = rows
+        return rows
+
+    def _speaker_centroids(self) -> Dict[str, Dict[str, Any]]:
+        """Map speaker_id -> display_name, created_at, embedding_count, centroid."""
+        if self._centroid_cache is not None:
+            return self._centroid_cache
+
+        grouped: Dict[str, Dict[str, Any]] = {}
+        for row in self._enrollments():
+            bucket = grouped.setdefault(
+                row["speaker_id"],
+                {
+                    "display_name": row["display_name"],
+                    "created_at": row["created_at"],
                     "vectors": [],
                 },
             )
-            bucket["vectors"].append(np.asarray(vec, dtype=np.float32))
+            bucket["vectors"].append(row["vector"])
 
         cache: Dict[str, Dict[str, Any]] = {}
         for speaker_id, info in grouped.items():
@@ -236,7 +276,7 @@ class SpeakerDB:
         self, embedding: np.ndarray, limit: int = 3
     ) -> List[Dict[str, Any]]:
         """
-        Query ChromaDB for the nearest stored embeddings regardless of threshold.
+        Rank stored embeddings by cosine similarity (full scan, not HNSW ``query``).
 
         Returns:
             List of dicts with speaker_id, display_name, embedding_index, similarity,
@@ -244,46 +284,28 @@ class SpeakerDB:
             has no embeddings.
         """
         limit = max(1, min(int(limit), 10))
-        embedding_list = embedding.tolist() if isinstance(embedding, np.ndarray) else embedding
-
-        try:
-            count = self.collection.count()
-        except Exception:
-            count = 0
-        if count <= 0:
+        query = np.asarray(embedding, dtype=np.float32)
+        enrollments = self._enrollments()
+        if not enrollments:
             return []
 
-        n_results = min(limit, count)
-        results = self.collection.query(
-            query_embeddings=[embedding_list],
-            n_results=n_results,
-            include=["metadatas", "distances"],
-        )
-
-        if not results["ids"] or not results["ids"][0]:
-            return []
+        scored: List[Tuple[float, Dict[str, Any]]] = []
+        for row in enrollments:
+            sim = embedding_cosine_similarity(query, row["vector"])
+            scored.append((sim, row))
+        scored.sort(key=lambda item: item[0], reverse=True)
 
         out: List[Dict[str, Any]] = []
-        for i, chroma_id in enumerate(results["ids"][0]):
-            metadata = results["metadatas"][0][i]
-            distance = results["distances"][0][i]
-            similarity = round(float(1 - distance), 4)
-            emb_idx = metadata.get("embedding_index")
-            if emb_idx is None and chroma_id and "_" in str(chroma_id):
-                try:
-                    emb_idx = int(str(chroma_id).rsplit("_", 1)[-1])
-                except ValueError:
-                    emb_idx = 0
+        for sim, row in scored[:limit]:
             out.append(
                 {
-                    "speaker_id": str(metadata.get("speaker_id", "")),
-                    "display_name": str(metadata.get("display_name", "")),
-                    "embedding_index": int(emb_idx if emb_idx is not None else 0),
-                    "similarity": similarity,
+                    "speaker_id": row["speaker_id"],
+                    "display_name": row["display_name"],
+                    "embedding_index": row["embedding_index"],
+                    "similarity": round(float(sim), 4),
                 }
             )
         centroids = self._speaker_centroids()
-        query = np.asarray(embedding, dtype=np.float32)
         for item in out:
             info = centroids.get(item["speaker_id"])
             if info and info.get("centroid") is not None:

@@ -1392,6 +1392,8 @@ interface HealthResponse {
 
 - The speaker database uses ChromaDB for storing and matching speaker embeddings
 - Identity matching uses cosine similarity, either against the **nearest enrollment** (`SPEAKER_MATCH_MODE=nearest`, default) or against each speaker’s **centroid** (L2-normalized mean of enrollments, `SPEAKER_MATCH_MODE=centroid`)
+- Matching loads stored vectors with Chroma `get()` and scores them in-process. It does **not** use HNSW `query()`, which is unsafe when the API and worker share one persist directory (that path raises `Error creating hnsw segment reader: Nothing found on disk` after enrollments written by the other process)
+- If speaker matching still errors, transcription continues and diarized speakers are left unmatched
 - Default similarity threshold is 0.7 (configurable via `SPEAKER_SIMILARITY_THRESHOLD`)
 - Multiple embeddings per speaker improve matching; centroid mode is more stable when enrollments vary, nearest mode can still match if any one enrollment is close
 - After changing `SPEAKER_MATCH_MODE`, restart API and worker, then rematch stored transcripts

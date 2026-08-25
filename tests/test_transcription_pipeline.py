@@ -212,6 +212,57 @@ class TestTranscriptionPipelineOrdering(unittest.TestCase):
 
         self.assertEqual(mock_transcribe.call_count, 1)
 
+    @patch("services.transcription_pipeline.transcribe_api_chunk")
+    @patch("services.transcription_pipeline.split_audio_into_chunks")
+    @patch("services.transcription_pipeline.resolve_transcription_language", return_value="en")
+    def test_hnsw_match_error_does_not_fail_pipeline(self, _mock_lang, mock_split, mock_transcribe):
+        from audio import AudioChunk
+        import numpy as np
+        from services.transcription_pipeline import run_transcription_pipeline
+
+        mock_split.return_value = [AudioChunk(path="chunk.wav", start_sec=0.0)]
+        mock_transcribe.return_value = (
+            "hello",
+            [WhisperSegment(id=0, start=0.0, end=1.0, text="hello")],
+        )
+        hnsw_error = RuntimeError(
+            "Error executing plan: Internal error: Error creating hnsw "
+            "segment reader: Nothing found on disk"
+        )
+        speaker_db = MagicMock()
+        speaker_db.match_speakers.side_effect = hnsw_error
+        speaker_db.query_best_match.side_effect = hnsw_error
+
+        @contextmanager
+        def tracking_session(**_kwargs):
+            diarizer = MagicMock()
+            diarizer.pipeline = MagicMock()
+            diarizer.diarize.return_value = DiarizationResult(
+                segments=[SpeakerSegment(start=0.0, end=1.0, speaker="speaker_SPEAKER_00")],
+                num_speakers=1,
+                embeddings={"SPEAKER_00": np.array([1.0, 0.0], dtype=np.float32)},
+            )
+            diarizer.match_speakers.side_effect = (
+                lambda embeddings, db, threshold=None: db.match_speakers(embeddings, threshold)
+            )
+            yield diarizer
+
+        with patch("services.transcription_pipeline.diarizer_session", tracking_session):
+            result = run_transcription_pipeline(
+                "audio.wav",
+                None,
+                _base_config(),
+                speaker_db,
+                diarize=True,
+                timestamps=True,
+            )
+
+        self.assertEqual(result.response.text, "hello")
+        self.assertIsNotNone(result.speakers_list)
+        self.assertEqual(len(result.speakers_list), 1)
+        self.assertFalse(result.speakers_list[0].matched)
+        self.assertIsNone(result.speakers_list[0].display_name)
+
 
 if __name__ == "__main__":
     unittest.main()

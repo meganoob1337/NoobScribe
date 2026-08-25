@@ -95,6 +95,26 @@ class TestWorkerBootstrapApiMode(unittest.TestCase):
         self.assertIsNotNone(speaker_db)
         self.assertIsNone(wb.get_worker_asr_model())
 
+    @patch("services.worker_bootstrap.get_config")
+    @patch("services.worker_bootstrap.SpeakerDB")
+    @patch("services.worker_bootstrap.load_model")
+    def test_get_worker_speaker_db_refreshes_each_call(
+        self, mock_load_model, mock_speaker_db, mock_get_config
+    ):
+        import services.worker_bootstrap as wb
+
+        cfg = _local_cfg(use_api=True, stt_base_url="https://api.example.com/v1", model_id="whisper-1")
+        mock_get_config.return_value = cfg
+        mock_db = MagicMock()
+        mock_speaker_db.return_value = mock_db
+        wb.init_worker_resources()
+        mock_db.refresh.reset_mock()
+
+        result = wb.get_worker_speaker_db()
+
+        self.assertIs(result, mock_db)
+        mock_db.refresh.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

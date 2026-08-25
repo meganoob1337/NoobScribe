@@ -82,4 +82,9 @@ def get_worker_asr_model() -> Any:
 def get_worker_speaker_db() -> Optional[SpeakerDB]:
     if _speaker_db is None:
         init_worker_resources()
+    if _speaker_db is not None:
+        try:
+            _speaker_db.refresh()
+        except Exception as e:
+            logger.warning("Worker speaker database refresh failed: %s", e)
     return _speaker_db

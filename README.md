@@ -69,7 +69,8 @@ flowchart LR
 
 - **API** — HTTP, recordings library, speaker CRUD, job enqueue/cancel/poll. In Docker it sets **`SKIP_MODEL_LOAD=1`** and does not load NeMo in-process.
 - **Redis + RQ** — `transcription` queue; all transcribe endpoints return **`202 Accepted`** immediately.
-- **Worker** — `python -m workers.run` loads ASR/diarization models once, processes jobs, writes progress and results to SQLite.
+- **Worker** — `python -m workers.run` loads ASR/diarization models once, processes jobs, writes progress and results to SQLite. Before each job it refreshes speaker-memory caches so enrollments saved by the API are visible.
+- **Speaker matching** — cosine over stored enrollments loaded with Chroma `get()` (not HNSW `query()`). API and worker share one persist directory; Chroma’s HNSW reader is not multi-process safe and can fail with `Nothing found on disk` after the other process writes.
 
 Compose starts **`redis`**, **`noobscribe-api`**, and **`noobscribe-worker`** (or CPU/no-Traefik variants). Job lifecycle, health checks, and scaling notes are in **[DOCKER_README.md](DOCKER_README.md)**; the diagram above is the high-level layout.
 

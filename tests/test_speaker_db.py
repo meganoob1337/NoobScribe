@@ -104,6 +104,7 @@ def _memory_db(match_mode: str = "nearest") -> SpeakerDB:
     db.similarity_threshold = 0.7
     db.match_mode = match_mode
     db._centroid_cache = None
+    db._enrollment_cache = None
     db.collection = FakeCollection()
     db.client = None
     return db
@@ -211,6 +212,43 @@ class TestSpeakerDBMatchModes(unittest.TestCase):
             embedding_cosine_similarity(query, speaker_centroid([query, _unit([0.0, 1.0])])),
             places=3,
         )
+
+    def test_nearest_survives_hnsw_query_failure(self):
+        query = _unit([1.0, 0.0])
+        db = _memory_db("nearest")
+        sid = db.create_speaker("Alice", query)
+
+        def boom(*_args, **_kwargs):
+            raise RuntimeError(
+                "Error executing plan: Internal error: Error creating hnsw "
+                "segment reader: Nothing found on disk"
+            )
+
+        db.collection.query = boom  # type: ignore[method-assign]
+        spk, sim = db.query_best_match(query)
+        self.assertIsNotNone(spk)
+        self.assertEqual(spk.id, sid)
+        self.assertGreater(sim, 0.99)
+
+    def test_refresh_reloads_enrollments_added_elsewhere(self):
+        query = _unit([1.0, 0.0])
+        db = _memory_db("nearest")
+        spk, sim = db.query_best_match(query)
+        self.assertIsNone(spk)
+        self.assertEqual(sim, 0.0)
+
+        other = _memory_db("nearest")
+        other.collection = db.collection
+        sid = other.create_speaker("Alice", query)
+        # Writer invalidates its own cache; the reader still has an empty cache.
+        spk_stale, _ = db.query_best_match(query)
+        self.assertIsNone(spk_stale)
+
+        db.refresh()
+        spk_fresh, sim_fresh = db.query_best_match(query)
+        self.assertIsNotNone(spk_fresh)
+        self.assertEqual(spk_fresh.id, sid)
+        self.assertGreater(sim_fresh, 0.99)
 
 
 if __name__ == "__main__":
