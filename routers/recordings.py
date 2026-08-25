@@ -33,7 +33,7 @@ from models import (
 )
 from database.models import TranscriptionJob as TranscriptionJobORM
 from services.transcription_enqueue import build_transcribe_params, enqueue_recording_transcription
-from services.transcription_jobs import job_to_dict
+from services.transcription_jobs import job_to_dict, processing_seconds_from_datetimes
 
 
 class FullRecordingFileResponse(FileResponse):
@@ -91,7 +91,14 @@ def _orm_recording_to_response(
     )
 
 
-def _orm_transcription_to_response(row: TranscriptionResultORM) -> TranscriptionResultResponse:
+def _orm_transcription_to_response(
+    row: TranscriptionResultORM,
+    *,
+    job: Optional[TranscriptionJobORM] = None,
+) -> TranscriptionResultResponse:
+    processing = row.processing_seconds
+    if processing is None and job is not None:
+        processing = processing_seconds_from_datetimes(job.started_at, job.completed_at)
     return TranscriptionResultResponse(
         id=row.id,
         recording_id=row.recording_id,
@@ -102,15 +109,37 @@ def _orm_transcription_to_response(row: TranscriptionResultORM) -> Transcription
         diarization_enabled=row.diarization_enabled,
         speakers=row.speakers_json,
         duration_seconds=row.duration_seconds,
+        processing_seconds=processing,
         word_timestamps=row.word_timestamps,
         created_at=row.created_at.isoformat() if row.created_at else "",
     )
+
+
+async def _jobs_by_transcription_id(
+    session: AsyncSession,
+    transcription_ids: List[str],
+) -> dict:
+    if not transcription_ids:
+        return {}
+    q = (
+        select(TranscriptionJobORM)
+        .where(TranscriptionJobORM.transcription_id.in_(transcription_ids))
+        .order_by(TranscriptionJobORM.completed_at.desc())
+    )
+    rows = list((await session.execute(q)).scalars().all())
+    out: dict = {}
+    for job in rows:
+        tid = job.transcription_id
+        if tid and tid not in out:
+            out[tid] = job
+    return out
 
 
 def _recording_detail(
     rec: RecordingORM,
     transcription_count: int,
     transcriptions: List[TranscriptionResultORM],
+    jobs_by_tid: Optional[dict] = None,
 ) -> RecordingDetailResponse:
     p = Path(rec.file_path)
     return RecordingDetailResponse(
@@ -125,7 +154,12 @@ def _recording_detail(
         created_at=rec.created_at.isoformat() if rec.created_at else "",
         updated_at=rec.updated_at.isoformat() if rec.updated_at else "",
         transcription_count=transcription_count,
-        transcriptions=[_orm_transcription_to_response(t) for t in transcriptions],
+        transcriptions=[
+            _orm_transcription_to_response(
+                t, job=(jobs_by_tid or {}).get(t.id)
+            )
+            for t in transcriptions
+        ],
     )
 
 
@@ -220,7 +254,8 @@ async def get_recording(recording_id: str, session: AsyncSession = Depends(get_s
     )
     res = await session.execute(q)
     rows = list(res.scalars().all())
-    return _recording_detail(rec, len(rows), rows)
+    jobs_by_tid = await _jobs_by_transcription_id(session, [t.id for t in rows])
+    return _recording_detail(rec, len(rows), rows, jobs_by_tid)
 
 
 @router.patch("/{recording_id}", response_model=RecordingResponse)
@@ -350,8 +385,11 @@ async def list_transcriptions(recording_id: str, session: AsyncSession = Depends
         .order_by(TranscriptionResultORM.created_at.desc())
     )
     res = await session.execute(q)
-    rows = res.scalars().all()
-    return TranscriptionResultListResponse(data=[_orm_transcription_to_response(r) for r in rows])
+    rows = list(res.scalars().all())
+    jobs_by_tid = await _jobs_by_transcription_id(session, [r.id for r in rows])
+    return TranscriptionResultListResponse(
+        data=[_orm_transcription_to_response(r, job=jobs_by_tid.get(r.id)) for r in rows]
+    )
 
 
 @router.get("/{recording_id}/transcriptions/{transcription_id}", response_model=TranscriptionResultResponse)
@@ -363,4 +401,5 @@ async def get_transcription(
     tr = await session.get(TranscriptionResultORM, transcription_id)
     if not tr or tr.recording_id != recording_id:
         raise HTTPException(status_code=404, detail="Transcription not found")
-    return _orm_transcription_to_response(tr)
+    jobs_by_tid = await _jobs_by_transcription_id(session, [tr.id])
+    return _orm_transcription_to_response(tr, job=jobs_by_tid.get(tr.id))

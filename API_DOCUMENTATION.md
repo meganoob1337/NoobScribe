@@ -981,7 +981,7 @@ Each **RecordingResponse** item: `id`, `name`, `original_filename`, `stored_file
 
 **Endpoint:** `GET /v1/recordings/{recording_id}`
 
-**Response:** **RecordingDetailResponse** — same fields as `RecordingResponse` plus `transcriptions`: array of **TranscriptionResultResponse** (newest first).
+**Response:** **RecordingDetailResponse** — same fields as `RecordingResponse` plus `transcriptions`: array of **TranscriptionResultResponse** (newest first). Each stored transcription includes `model_id` (ASR model the worker used) and optional `processing_seconds` (job wall time: `completed_at − started_at`).
 
 ---
 
@@ -1101,7 +1101,7 @@ Re-enqueues `queued` jobs older than `stale_seconds` when the linked RQ job is m
 
 **Response:** `{ "object": "list", "data": [ TranscriptionResultResponse ] }`
 
-**TranscriptionResultResponse:** `id`, `recording_id`, `full_text`, `segments` (JSON array), `language`, `model_id`, `diarization_enabled`, `speakers` (JSON array), `duration_seconds`, `word_timestamps` (boolean request flag; word-level timestamps are **not** produced), `created_at`.
+**TranscriptionResultResponse:** `id`, `recording_id`, `full_text`, `segments` (JSON array), `language`, `model_id` (ASR model the worker used: local `ASR_MODEL` registry key, or remote `MODEL_ID` when `USE_API=1`), `diarization_enabled`, `speakers` (JSON array), `duration_seconds` (audio length), `processing_seconds` (optional job wall time in seconds from `started_at` to `completed_at`; persisted on new runs, otherwise derived from the linked job row when timestamps exist), `word_timestamps` (boolean request flag; word-level timestamps are **not** produced), `created_at`.
 
 ---
 

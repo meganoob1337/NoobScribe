@@ -83,6 +83,7 @@ def _build_transcription_result_row(
     *,
     diarize: bool,
     word_timestamps: bool,
+    processing_seconds: Optional[float] = None,
 ) -> tuple[str, TranscriptionResultORM]:
     cfg = get_config()
     seg_json = [segment_to_dict(s) for s in pr.all_segments]
@@ -104,6 +105,7 @@ def _build_transcription_result_row(
         diarization_enabled=diarize,
         speakers_json=spk_json,
         duration_seconds=dur,
+        processing_seconds=processing_seconds,
         word_timestamps=word_timestamps,
     )
     return tid, tr
@@ -116,9 +118,14 @@ def persist_pipeline_transcription_sync(
     *,
     diarize: bool,
     word_timestamps: bool,
+    processing_seconds: Optional[float] = None,
 ) -> str:
     tid, tr = _build_transcription_result_row(
-        rec, pr, diarize=diarize, word_timestamps=word_timestamps
+        rec,
+        pr,
+        diarize=diarize,
+        word_timestamps=word_timestamps,
+        processing_seconds=processing_seconds,
     )
     session.add(tr)
     session.add(rec)
@@ -133,9 +140,14 @@ async def persist_pipeline_transcription(
     *,
     diarize: bool,
     word_timestamps: bool,
+    processing_seconds: Optional[float] = None,
 ) -> str:
     tid, tr = _build_transcription_result_row(
-        rec, pr, diarize=diarize, word_timestamps=word_timestamps
+        rec,
+        pr,
+        diarize=diarize,
+        word_timestamps=word_timestamps,
+        processing_seconds=processing_seconds,
     )
     session.add(tr)
     session.add(rec)

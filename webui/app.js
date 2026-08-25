@@ -1529,6 +1529,16 @@ function noobScribeApp() {
       }
     },
 
+    formatProcessingSeconds(sec) {
+      if (sec == null || sec === "") return "";
+      const n = Number(sec);
+      if (!Number.isFinite(n) || n < 0) return "";
+      if (n < 60) return Math.round(n) + "s";
+      const minutes = Math.floor(n / 60);
+      const seconds = Math.round(n % 60);
+      return minutes + "m " + seconds + "s";
+    },
+
     /** Map diarization id (e.g. SPEAKER_00) -> display label (matched name or id). */
     speakerMapFromTranscription() {
       const map = Object.create(null);

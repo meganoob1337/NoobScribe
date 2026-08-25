@@ -78,7 +78,7 @@ Rebuild note: permissions UX, codec support, and “tab vs window” audio behav
   - **Run** sends `POST /v1/recordings/:id/transcribe` as **FormData** (returns `202` + `job_id`), then refreshes the **Active jobs** panel via `GET /v1/recordings/:id/transcription-jobs`. The button stays enabled so multiple jobs can be queued with different options.
   - Queue/API errors show inline in the transcribe panel; job progress and cancel are not shown here.
 - **Active jobs panel**: Shows **queued** and **running** jobs for this recording only. Polls every ~2s while any are active. Each row: status badge, job type, live progress from `progress_stage` / `progress_current` / `progress_total` (e.g. “Loading diarization model…”, “Running diarization…”, “Loading transcription model…”, “Transcribing chunk 3/10…”), **Cancel** → `POST /v1/transcription-jobs/:jobId/cancel`. When the last active job finishes, the recording is re-fetched so the **Stored transcriptions** list updates.
-- **Transcriptions list**: Each item shows created time and “· diarized” if `diarization_enabled`; click → `#/r/:id/t/:transcriptionId`.
+- **Transcriptions list**: Each item shows created time, “· diarized” if `diarization_enabled`, `model_id` when present, and job wall time (`processing_seconds`, e.g. `13s` or `1m 12s`) when present; click → `#/r/:id/t/:transcriptionId`.
 - **Delete recording**: Confirm dialog → `DELETE /v1/recordings/:id` → navigate home.
 
 ## Feature: transcription jobs (`jobs`)
@@ -93,6 +93,7 @@ Rebuild note: permissions UX, codec support, and “tab vs window” audio behav
 ## Feature: transcript viewer (`transcript`)
 
 - **Load**: `GET /v1/recordings/:rid/transcriptions/:tid`.
+- **Header meta**: Under the title, shows `model_id` and formatted `processing_seconds` when present.
 - **Formatted body**: If `segments[]` exists, builds text with **one segment per paragraph**: `[resolved_label] body`, where label comes from `transcription.speakers[]` (`display_name` or id). **Strips** a leading duplicate speaker prefix from segment text (e.g. `SPEAKER_00: `) when it matches the segment’s diarization id (case-insensitive). Unknown speaker id still shows body only. If no segments, falls back to `full_text`. A **Show timestamps** checkbox (`showSegmentTimestamps`, default off) prefixes each paragraph with `[start–end s]` from the segment JSON (one decimal, same range format as the Segments list). Copy and download use the currently displayed formatting.
 - **Copy**: Copies the full `formattedTranscript()` output to the clipboard via `navigator.clipboard.writeText()`; shows a brief "Copied!" confirmation that auto-hides after 2 seconds.
 - **Download**: Client-side **Blob** download as `transcription-<sanitized-id>.txt` from `formattedTranscript()` output.
@@ -147,8 +148,8 @@ Two tabs:
 Rebuilders should align with the live OpenAPI/docs, but the UI assumes roughly:
 
 - **Recording list item**: `id`, `name`, `created_at`, `duration_seconds?`, `transcription_count`.
-- **Recording detail**: above plus `transcriptions[]` with `id`, `created_at`, `diarization_enabled`.
-- **Transcription**: `id`, `recording_id`, `segments[]` with `start`, `end`, `text`, `speaker?`, `speakers[]` with `id`, `display_name?`, `matched?`, `embedding?`, `full_text` fallback.
+- **Recording detail**: above plus `transcriptions[]` with `id`, `created_at`, `diarization_enabled`, `model_id?`, `processing_seconds?`.
+- **Transcription**: `id`, `recording_id`, `model_id?`, `processing_seconds?`, `segments[]` with `start`, `end`, `text`, `speaker?`, `speakers[]` with `id`, `display_name?`, `matched?`, `embedding?`, `full_text` fallback.
 - **Extract result**: `recording_id?`, `segments` or `text`, `speakers[]` as above.
 - **Speaker**: `id`, `display_name`, `embedding_count`.
 - **Snippet item**: `preview_url`, `recording_id`, `recording_name?`, `transcription_id`, `start`, `end`, `segment_text`.

@@ -383,6 +383,8 @@
                   <button type="button" @click="go('/r/' + recording.id + '/t/' + t.id)" class="text-left w-full px-4 py-3 rounded-lg border border-slate-800 hover:bg-slate-900/50 text-sm">
                     <span class="text-white" x-text="formatDate(t.created_at)"></span>
                     <span class="text-slate-500 ml-2" x-text="t.diarization_enabled ? '· diarized' : ''"></span>
+                    <span class="text-slate-500 ml-2" x-show="t.model_id" x-text="'· ' + t.model_id"></span>
+                    <span class="text-slate-500 ml-2" x-show="t.processing_seconds != null" x-text="'· ' + formatProcessingSeconds(t.processing_seconds)"></span>
                   </button>
                 </li>
               </template>
@@ -459,9 +461,16 @@
       <template x-if="transcription && !trLoading">
         <div class="space-y-6">
           <div class="flex flex-wrap items-center justify-between gap-3">
-            <div class="flex items-center gap-1">
-              <h2 class="text-lg font-medium text-white">Transcription</h2>
-              <span x-show="copied" x-transition class="text-xs text-green-400 ml-1">Copied!</span>
+            <div>
+              <div class="flex items-center gap-1">
+                <h2 class="text-lg font-medium text-white">Transcription</h2>
+                <span x-show="copied" x-transition class="text-xs text-green-400 ml-1">Copied!</span>
+              </div>
+              <p class="text-xs text-slate-500 mt-1" x-show="transcription.model_id || transcription.processing_seconds != null">
+                <span x-show="transcription.model_id" x-text="transcription.model_id"></span>
+                <span x-show="transcription.model_id && transcription.processing_seconds != null"> · </span>
+                <span x-show="transcription.processing_seconds != null" x-text="formatProcessingSeconds(transcription.processing_seconds)"></span>
+              </p>
             </div>
             <div class="flex flex-wrap items-center gap-3">
               <label class="inline-flex items-center gap-2 cursor-pointer text-sm text-slate-300">

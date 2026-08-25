@@ -125,6 +125,18 @@ def job_visible_in_ui(job: TranscriptionJobORM) -> bool:
     return rq_job_exists(job.rq_job_id)
 
 
+def processing_seconds_from_datetimes(
+    started_at: Optional[datetime],
+    completed_at: Optional[datetime],
+) -> Optional[float]:
+    """Wall-clock job duration in seconds (`completed_at - started_at`)."""
+    if started_at is None or completed_at is None:
+        return None
+    started = started_at if started_at.tzinfo else started_at.replace(tzinfo=timezone.utc)
+    completed = completed_at if completed_at.tzinfo else completed_at.replace(tzinfo=timezone.utc)
+    return max(0.0, (completed - started).total_seconds())
+
+
 def job_to_dict(job: TranscriptionJobORM, *, recording_name: Optional[str] = None) -> dict:
     return {
         "job_id": job.id,

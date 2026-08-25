@@ -58,6 +58,7 @@ class TranscriptionResult(Base):
     diarization_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     speakers_json: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
     duration_seconds: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    processing_seconds: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     word_timestamps: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 

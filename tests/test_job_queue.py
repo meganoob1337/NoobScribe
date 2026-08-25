@@ -15,6 +15,7 @@ from services.transcription_jobs import (
     JOB_STATUS_FAILED,
     JOB_STATUS_QUEUED,
     JOB_STATUS_RUNNING,
+    processing_seconds_from_datetimes,
     reconcile_stale_queued_jobs,
     update_job_progress_sync,
 )
@@ -160,6 +161,27 @@ class TestUpdateJobProgressSync(unittest.TestCase):
         self.assertEqual(job.progress_current, 2)
         self.assertEqual(job.progress_total, 4)
         session.flush.assert_called_once()
+
+
+class TestProcessingSecondsFromDatetimes(unittest.TestCase):
+    def test_completed_minus_started(self):
+        started = datetime(2026, 8, 25, 18, 57, 8, tzinfo=timezone.utc)
+        completed = datetime(2026, 8, 25, 18, 57, 21, tzinfo=timezone.utc)
+        self.assertAlmostEqual(
+            processing_seconds_from_datetimes(started, completed), 13.0
+        )
+
+    def test_missing_timestamps(self):
+        now = datetime.now(timezone.utc)
+        self.assertIsNone(processing_seconds_from_datetimes(None, now))
+        self.assertIsNone(processing_seconds_from_datetimes(now, None))
+
+    def test_naive_datetimes_treated_as_utc(self):
+        started = datetime(2026, 8, 25, 18, 0, 0)
+        completed = datetime(2026, 8, 25, 18, 1, 30)
+        self.assertAlmostEqual(
+            processing_seconds_from_datetimes(started, completed), 90.0
+        )
 
 
 if __name__ == "__main__":

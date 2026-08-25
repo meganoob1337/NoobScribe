@@ -29,6 +29,7 @@ from services.transcription_jobs import (
     JOB_TYPE_OPENAI,
     JOB_TYPE_RECORDING,
     JOB_TYPE_SPEAKER_EXTRACT,
+    processing_seconds_from_datetimes,
     update_job_progress_sync,
 )
 from services.transcription_pipeline import run_transcription_pipeline
@@ -142,12 +143,16 @@ def _run_recording_job(job_id: str, recording_id: str) -> None:
         rec_row = session.get(RecordingORM, recording_id)
         if not rec_row:
             raise RuntimeError(f"Recording {recording_id} not found")
+        completed_at = _utcnow()
         tid = persist_pipeline_transcription_sync(
             session,
             rec_row,
             pr,
             diarize=bool(params.get("diarize", True)),
             word_timestamps=bool(params.get("word_timestamps", False)),
+            processing_seconds=processing_seconds_from_datetimes(
+                job_row.started_at, completed_at
+            ),
         )
         payload = _pipeline_result_to_job_payload(
             pr,
@@ -165,7 +170,7 @@ def _run_recording_job(job_id: str, recording_id: str) -> None:
                 transcription_id=tid,
                 result_json=payload,
                 status=JOB_STATUS_COMPLETED,
-                completed_at=_utcnow(),
+                completed_at=completed_at,
                 progress_stage="completed",
             )
         )

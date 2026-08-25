@@ -80,7 +80,7 @@ The built-in UI at `/ui` is a single-page app for managing recordings, transcrip
 - **Recordings library:** paginated recordings list, responsive table/cards, and quick navigation to details.
 - **Upload flow:** upload audio or video with optional recording name and immediate redirect to the created recording.
 - **Browser recording:** capture microphone and/or tab/window audio, live level meters, preview, upload, and discard. In Chrome or Edge, enable **Share tab audio** or **Share system audio** in the share picker when capturing tab/screen audio. A floating picture-in-picture window shows recording time and mute/stop controls while you work in other apps.
-- **Recording detail:** rename or **delete** recordings, play original audio, queue one or more transcription jobs (language, diarize, include speaker labels in text), chunk-level progress while a worker runs, and review prior transcription runs.
+- **Recording detail:** rename or **delete** recordings, play original audio, queue one or more transcription jobs (language, diarize, include speaker labels in text), chunk-level progress while a worker runs, and review prior transcription runs (ASR model and job processing time).
 - **Jobs page (`#/jobs`):** list visible transcription jobs, live poll, cancel queued/running jobs, and open completed transcripts.
 - **Transcript viewer:** formatted transcript, optional **show timestamps** per segment (from stored JSON), **copy**, `.txt` download, per-segment snippet playback, **re-match** against speaker memory, nearest-embedding similarity, and save detected speaker embeddings.
 - **Speaker management:** list/delete speakers, add embeddings from snippet extraction or manual vector input, inspect embedding snippets, delete individual embeddings, and re-match stored transcripts.
@@ -220,10 +220,6 @@ SKIP_MODEL_LOAD=1 ./run.sh --port 8000
 ./venv/bin/python -m pytest tests/ -q
 ./venv/bin/python tests/test_api.py --file /path/to/audio.wav --url http://localhost:8000
 ```
-
-`tests/test_api.py` expects **`202` + job polling** (it does not treat the enqueue response as the transcript).
-
-Diarization scoring against CALLHOME (DER) lives in [`tests/callhome_tests/README.md`](tests/callhome_tests/README.md).
 
 ### End-to-end performance evaluation
 

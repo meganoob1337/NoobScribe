@@ -215,6 +215,7 @@ class TranscriptionResultResponse(BaseModel):
     diarization_enabled: bool = False
     speakers: Optional[List[Dict[str, Any]]] = None
     duration_seconds: Optional[float] = None
+    processing_seconds: Optional[float] = None
     word_timestamps: bool = False
     created_at: str
 

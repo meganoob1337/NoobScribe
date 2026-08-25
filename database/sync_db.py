@@ -6,10 +6,10 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Generator
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from database.db import Base
+from database.db import Base, ensure_sqlite_schema_sync
 
 _sync_engine = None
 _sync_session_factory: sessionmaker[Session] | None = None
@@ -59,10 +59,6 @@ def init_sync_engine() -> None:
     )
 
 
-def _ensure_sqlite_wal_sync(sync_conn) -> None:
-    sync_conn.execute(text("PRAGMA journal_mode=WAL"))
-
-
 def init_sync_db() -> None:
     """Create tables if they do not exist (sync, for workers)."""
     if _sync_engine is None:
@@ -73,7 +69,7 @@ def init_sync_db() -> None:
         Base.metadata.create_all(conn)
         url = str(_sync_engine.url)
         if "sqlite" in url:
-            conn.execute(text("PRAGMA journal_mode=WAL"))
+            ensure_sqlite_schema_sync(conn)
 
 
 @contextmanager

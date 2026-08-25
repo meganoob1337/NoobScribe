@@ -65,6 +65,23 @@ def _ensure_hide_in_recordings_column_sync(sync_conn) -> None:
         )
 
 
+def _ensure_processing_seconds_column_sync(sync_conn) -> None:
+    """SQLite: add processing_seconds if missing (existing DBs stay NULL)."""
+    r = sync_conn.execute(text("PRAGMA table_info(transcription_results)"))
+    cols = [row[1] for row in r.fetchall()]
+    if cols and "processing_seconds" not in cols:
+        sync_conn.execute(
+            text("ALTER TABLE transcription_results ADD COLUMN processing_seconds FLOAT")
+        )
+
+
+def ensure_sqlite_schema_sync(sync_conn) -> None:
+    """Add columns that create_all will not create on existing SQLite files."""
+    _ensure_hide_in_recordings_column_sync(sync_conn)
+    _ensure_processing_seconds_column_sync(sync_conn)
+    _ensure_sqlite_wal_sync(sync_conn)
+
+
 def _ensure_sqlite_wal_sync(sync_conn) -> None:
     sync_conn.execute(text("PRAGMA journal_mode=WAL"))
 
@@ -80,8 +97,7 @@ async def init_db() -> None:
         await conn.run_sync(Base.metadata.create_all)
         url = str(_engine.url)
         if "sqlite" in url:
-            await conn.run_sync(_ensure_hide_in_recordings_column_sync)
-            await conn.run_sync(_ensure_sqlite_wal_sync)
+            await conn.run_sync(ensure_sqlite_schema_sync)
 
 
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
