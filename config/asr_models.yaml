@@ -27,3 +27,12 @@ models:
       hf_repo: istupakov/canary-1b-v2-onnx
     quantization: null
     allow_path_override: true
+
+  nemo-parakeet-tdt-0.6b-v2:
+    display_name: "NVIDIA Parakeet TDT 0.6B v2 (ONNX)"
+    backend: onnx
+    source:
+      onnx_asr_name: nemo-parakeet-tdt-0.6b-v2
+      hf_repo: istupakov/parakeet-tdt-0.6b-v2-onnx
+    quantization: null
+    allow_path_override: true

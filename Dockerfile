@@ -44,4 +44,5 @@ EXPOSE 8000
 
 # Run the API (deps are baked in; no run.sh — that is for local dev / venv bootstrap)
 # HOST and PORT match docker-compose environment defaults.
+ENV LD_LIBRARY_PATH=/app/venv/lib/python3.12/site-packages/nvidia/cudnn/lib:/app/venv/lib/python3.12/site-packages/nvidia/cublas/lib:/app/venv/lib/python3.12/site-packages/nvidia/cuda_nvrtc/lib:${LD_LIBRARY_PATH}
 CMD ["/bin/bash", "-c", "exec /app/venv/bin/uvicorn main:app --host \"${HOST:-0.0.0.0}\" --port \"${PORT:-8000}\""]
